@@ -164,10 +164,10 @@ def _connect_db():
             try:
                 wrapped.sync()  # traer lo último de la nube
             except Exception as e:
-                app.logger.warning("Turso sync inicial falló: %s", e)
+                print(f"[DB] Turso sync inicial falló: {e}", flush=True)
             return wrapped
         except Exception as e:
-            app.logger.warning("No se pudo conectar a Turso, usando SQLite local: %s", e)
+            print(f"[DB] No se pudo conectar a Turso, usando SQLite local: {e}", flush=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -187,7 +187,7 @@ def close_db(exc=None):
             if isinstance(db, _TursoConn):
                 db.sync()  # subir los cambios a la nube
         except Exception as e:
-            app.logger.warning("Turso sync final falló: %s", e)
+            print(f"[DB] Turso sync final falló: {e}", flush=True)
         db.close()
 
 
@@ -251,6 +251,18 @@ def init_db():
         db.execute("ALTER TABLE products ADD COLUMN photo_blob BLOB")
     if "photo_mime" not in cols:
         db.execute("ALTER TABLE products ADD COLUMN photo_mime TEXT DEFAULT ''")
+    # Migración: datos de entrega en orders (nombre, dirección, ciudad,
+    # departamento y método de entrega).
+    ocols = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
+    for col in (
+        "customer_name",
+        "customer_address",
+        "customer_city",
+        "customer_department",
+        "delivery_method",
+    ):
+        if col not in ocols:
+            db.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT DEFAULT ''")
     db.commit()
     try:
         if isinstance(db, _TursoConn):
@@ -752,6 +764,11 @@ def admin_list_orders():
                 "total_cents": r["total_cents"],
                 "status": r["status"],
                 "created_at": r["created_at"],
+                "customer_name": r["customer_name"] or "",
+                "customer_address": r["customer_address"] or "",
+                "customer_city": r["customer_city"] or "",
+                "customer_department": r["customer_department"] or "",
+                "delivery_method": r["delivery_method"] or "",
             }
         )
     return jsonify(out)
@@ -875,6 +892,33 @@ def _validate_cart(items):
 
 @app.route("/api/checkout", methods=["POST"])
 def api_checkout():
+    data = request.get_json(force=True, silent=True) or {}
+    customer = data.get("customer") or {}
+    name = (customer.get("name") or "").strip()
+    address = (customer.get("address") or "").strip()
+    city = (customer.get("city") or "").strip()
+    department = (customer.get("department") or "").strip()
+    delivery = (customer.get("delivery") or "").strip()
+    if not name or not address or not city or not department:
+        return (
+            jsonify(
+                {
+                    "error": "Completa tu nombre, dirección, ciudad y departamento "
+                    "para poder hacer el envío."
+                }
+            ),
+            400,
+        )
+    if delivery not in ("domicilio", "oficina"):
+        return (
+            jsonify(
+                {
+                    "error": "Elige el método de entrega: envío a domicilio "
+                    "o recoger en oficina cercana."
+                }
+            ),
+            400,
+        )
     secret = get_setting("stripe_secret_key")
     if not secret:
         return (
@@ -894,8 +938,19 @@ def api_checkout():
 
     db = get_db()
     cur = db.execute(
-        "INSERT INTO orders(items, total_cents, status, created_at) VALUES(?,?, 'pending', ?)",
-        (json.dumps(snapshot), total, int(time.time())),
+        "INSERT INTO orders(items, total_cents, status, created_at, "
+        "customer_name, customer_address, customer_city, customer_department, "
+        "delivery_method) VALUES(?,?, 'pending', ?,?,?,?,?,?)",
+        (
+            json.dumps(snapshot),
+            total,
+            int(time.time()),
+            name,
+            address,
+            city,
+            department,
+            delivery,
+        ),
     )
     order_id = cur.lastrowid
     db.commit()
@@ -909,7 +964,12 @@ def api_checkout():
             mode="payment",
             success_url=f"{base_url}/exito?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/cancelado",
-            metadata={"order_id": str(order_id)},
+            metadata={
+                "order_id": str(order_id),
+                "cliente": name[:120],
+                "entrega": delivery,
+                "ciudad": f"{city}, {department}"[:120],
+            },
         )
     except Exception as e:
         db.execute("UPDATE orders SET status='error' WHERE id=?", (order_id,))
