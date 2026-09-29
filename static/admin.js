@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   var notice = document.getElementById('notice');
+  var currentUploadId = '';
 
   function money(cents) {
     return new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(cents / 100);
@@ -58,6 +59,7 @@
     document.getElementById('p-sku').value = p ? p.sku : '';
     document.getElementById('p-photo').value = p ? p.photo : '';
     document.getElementById('p-photo-file').value = '';
+    currentUploadId = '';
     var prev = document.getElementById('p-photo-preview');
     if (p && p.photo) { prev.src = p.photo; prev.classList.remove('hidden'); }
     else { prev.classList.add('hidden'); }
@@ -78,6 +80,7 @@
     try {
       var d = await api('/api/upload', { method: 'POST', body: fd });
       document.getElementById('p-photo').value = d.url;
+      currentUploadId = d.upload_id || '';
       var prev = document.getElementById('p-photo-preview');
       prev.src = d.url; prev.classList.remove('hidden');
       showNotice('Foto subida ✅');
@@ -98,6 +101,7 @@
       category: document.getElementById('p-category').value,
       sku: document.getElementById('p-sku').value,
       photo: document.getElementById('p-photo').value,
+      photo_upload_id: currentUploadId,
       active: document.getElementById('p-active').checked
     };
     try {
