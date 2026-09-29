@@ -157,13 +157,15 @@ body.dark .tab { background: #1e293b; color: #cbd5e1; }
 .check input { width: auto; }
 img.preview { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; margin-top: 8px; }
 
-/* ===== Nueva tienda general (inspirada en boutique) ===== */
+/* ===== Tienda "Tu Nuevo Estilo": paleta del logo (azul marino, rojo, dorado) ===== */
 :root {
-  --brand: #b76e79;
-  --brand-dark: #8e4a55;
-  --blush: #f6e3e7;
-  --cream: #faf7f5;
-  --ink: #3b2b2f;
+  --brand: #c1121f;
+  --brand-dark: #0a2a5e;
+  --blush: #e9eff8;
+  --cream: #f8fafd;
+  --ink: #12263f;
+  --gold: #f0b429;
+  --accent: #0a2a5e;
   --serif: Georgia, "Times New Roman", serif;
 }
 body { background: var(--cream); color: var(--ink); }
@@ -181,7 +183,7 @@ body { background: var(--cream); color: var(--ink); }
 .info-nav {
   display: flex; gap: 4px; overflow-x: auto; white-space: nowrap;
   background: var(--blush); padding: 10px 12px;
-  border-top: 1px solid #ecd3d9; border-bottom: 1px solid #ecd3d9;
+  border-top: 1px solid #d5e0f0; border-bottom: 1px solid #d5e0f0;
   position: sticky; top: 0; z-index: 10;
 }
 .info-nav button {
@@ -193,7 +195,7 @@ body { background: var(--cream); color: var(--ink); }
 
 .hero {
   margin: 14px; border-radius: 18px; overflow: hidden;
-  background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, #d9a3ad 100%);
+  background: linear-gradient(135deg, #022249 0%, #0a2a5e 45%, #c1121f 100%);
   color: #fff; padding: 44px 24px; text-align: center;
   position: relative;
 }
@@ -204,7 +206,7 @@ body { background: var(--cream); color: var(--ink); }
 }
 .hero-text { position: relative; }
 .hero h2 { font-family: var(--serif); font-weight: 400; font-size: 2.2rem; margin: 0 0 6px; }
-.hero .tagline { color: #ffe9ee; font-style: italic; margin: 0 0 20px; }
+.hero .tagline { color: #ffe3e3; font-style: italic; margin: 0 0 20px; }
 .btn-hero {
   display: inline-block; background: #fff; color: var(--brand-dark);
   font-weight: 700; letter-spacing: 1px; text-decoration: none;
@@ -220,7 +222,7 @@ body { background: var(--cream); color: var(--ink); }
 }
 .cat-pills { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .pill {
-  background: var(--blush); border: 1px solid #e8c9d1; color: var(--ink);
+  background: var(--blush); border: 1px solid #cfddf2; color: var(--ink);
   border-radius: 999px; padding: 10px 22px; font-size: .95rem; cursor: pointer;
   font-style: italic; font-family: var(--serif);
 }
@@ -228,16 +230,16 @@ body { background: var(--cream); color: var(--ink); }
 
 #catalogo { padding-top: 6px; }
 .grid { padding: 0 14px 24px; }
-.card { position: relative; border: 1px solid #f0e2e5; }
+.card { position: relative; border: 1px solid #e3eaf5; }
 .cat-badge {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(142,74,85,.92); color: #fff; font-size: .72rem;
+  background: rgba(10,42,94,.92); color: #fff; font-size: .72rem;
   padding: 4px 10px; border-radius: 999px; font-weight: 600;
 }
 
 .store-foot {
   text-align: center; padding: 28px 18px 40px; margin-top: 10px;
-  background: var(--blush); border-top: 1px solid #ecd3d9;
+  background: var(--blush); border-top: 1px solid #d5e0f0;
 }
 .store-foot h3 { font-family: var(--serif); font-weight: 400; font-size: 1.4rem; margin: 0 0 4px; }
 .store-foot .tagline { font-style: italic; color: var(--brand-dark); margin: 0 0 10px; }
@@ -255,7 +257,7 @@ body { background: var(--cream); color: var(--ink); }
 .price { color: var(--brand-dark); }
 
 /* Formulario de datos de entrega (carrito) */
-.delivery-form { background: #faf7f5; border: 1px solid #eee3df; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.delivery-form { background: #f8fafd; border: 1px solid #e3eaf5; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
 .delivery-form h3 { margin: 0 0 8px; font-size: .95rem; }
 .delivery-form input[type="text"], .delivery-form select {
   width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 10px 12px;
