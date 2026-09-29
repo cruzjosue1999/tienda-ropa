@@ -223,7 +223,8 @@ def init_db():
             total_cents INTEGER NOT NULL,
             stripe_session_id TEXT DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending',
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            shipping_cents INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -242,6 +243,16 @@ def init_db():
     row = db.execute("SELECT value FROM settings WHERE key='currency'").fetchone()
     if row and (row[0] or "").strip().lower() == "usd":
         db.execute("UPDATE settings SET value='hnl' WHERE key='currency'")
+    # Migración de marca: la tienda ahora se llama "Tu Nuevo Estilo".
+    # Solo renombra si el valor guardado es uno de los nombres anteriores,
+    # para no pisar un nombre que el dueño haya personalizado.
+    row = db.execute("SELECT value FROM settings WHERE key='store_name'").fetchone()
+    if row and (row[0] or "").strip() in (
+        "Mi Tienda de Ropa",
+        "Mi Tienda",
+        "US Style Honduras",
+    ):
+        db.execute("UPDATE settings SET value='Tu Nuevo Estilo' WHERE key='store_name'")
     # Migración: columna category en products (para filtrar por categorías).
     cols = [c[1] for c in db.execute("PRAGMA table_info(products)").fetchall()]
     if "category" not in cols:
@@ -263,6 +274,9 @@ def init_db():
     ):
         if col not in ocols:
             db.execute(f"ALTER TABLE orders ADD COLUMN {col} TEXT DEFAULT ''")
+    # Migración: costo de envío guardado en el pedido.
+    if "shipping_cents" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN shipping_cents INTEGER DEFAULT 0")
     db.commit()
     try:
         if isinstance(db, _TursoConn):
@@ -325,7 +339,7 @@ def login_required(view):
 def store():
     return render_template(
         "store.html",
-        store_name=get_setting("store_name", "Mi Tienda de Ropa"),
+        store_name=get_setting("store_name", "Tu Nuevo Estilo"),
     )
 
 
@@ -373,7 +387,7 @@ def admin_logout():
 # PWA: manifest dinámico (usa el nombre de la tienda)
 @app.route("/manifest.json")
 def manifest():
-    store_name = get_setting("store_name", "Mi Tienda de Ropa")
+    store_name = get_setting("store_name", "Tu Nuevo Estilo")
     return jsonify(
         {
             "name": store_name,
@@ -403,7 +417,7 @@ def manifest():
 def admin_manifest():
     return jsonify(
         {
-            "name": "Tienda Admin",
+            "name": "Tu Nuevo Estilo Admin",
             "short_name": "Admin",
             "start_url": "/admin",
             "scope": "/admin",
@@ -519,7 +533,7 @@ def api_logout():
 @app.route("/api/admin/me")
 @login_required
 def api_me():
-    return jsonify({"ok": True, "store_name": get_setting("store_name", "Mi Tienda de Ropa")})
+    return jsonify({"ok": True, "store_name": get_setting("store_name", "Tu Nuevo Estilo")})
 
 
 @app.route("/api/admin/change-password", methods=["POST"])
@@ -769,6 +783,7 @@ def admin_list_orders():
                 "customer_city": r["customer_city"] or "",
                 "customer_department": r["customer_department"] or "",
                 "delivery_method": r["delivery_method"] or "",
+                "shipping_cents": r["shipping_cents"] if r["shipping_cents"] else 0,
             }
         )
     return jsonify(out)
@@ -795,7 +810,7 @@ INFO_DEFAULTS = {
 @app.route("/api/info")
 def api_info():
     """Información pública de la tienda: nombre, eslogan y secciones (pagos, envíos, etc.)."""
-    out = {"store_name": get_setting("store_name", "Mi Tienda"), "currency": get_setting("currency", "hnl")}
+    out = {"store_name": get_setting("store_name", "Tu Nuevo Estilo"), "currency": get_setting("currency", "hnl")}
     for k, default in INFO_DEFAULTS.items():
         v = (get_setting(k) or "").strip()
         out[k] = v or default
@@ -806,7 +821,7 @@ def api_info():
 @login_required
 def admin_get_settings():
     out = {
-        "store_name": get_setting("store_name", "Mi Tienda de Ropa"),
+        "store_name": get_setting("store_name", "Tu Nuevo Estilo"),
         "currency": get_setting("currency", "hnl"),
         "tagline": get_setting("tagline", INFO_DEFAULTS["tagline"]),
         "info_horarios": get_setting("info_horarios", ""),
@@ -826,7 +841,7 @@ def admin_get_settings():
 def admin_put_settings():
     data = request.get_json(force=True, silent=True) or {}
     if "store_name" in data:
-        set_setting("store_name", (data["store_name"] or "").strip() or "Mi Tienda de Ropa")
+        set_setting("store_name", (data["store_name"] or "").strip() or "Tu Nuevo Estilo")
     if "currency" in data:
         cur = (data["currency"] or "hnl").strip().lower()
         set_setting("currency", cur if len(cur) == 3 else "hnl")
@@ -903,8 +918,9 @@ def api_checkout():
         return (
             jsonify(
                 {
-                    "error": "Completa tu nombre, dirección, ciudad y departamento "
-                    "para poder hacer el envío."
+                    "error": "Completa tu nombre, dirección, ciudad y departamento. "
+                    "Si no ves esos campos, actualiza la app: ciérrala por completo "
+                    "y vuelve a abrirla."
                 }
             ),
             400,
@@ -936,14 +952,36 @@ def api_checkout():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    # Costo de envío: L150 hasta 5 artículos, L200 si son más.
+    # Recoger en oficina cercana no tiene costo.
+    currency = get_setting("currency", "hnl")
+    total_qty = sum(s["qty"] for s in snapshot)
+    if delivery == "oficina":
+        shipping = 0
+    else:
+        shipping = 15000 if total_qty <= 5 else 20000
+    if shipping:
+        line_items.append(
+            {
+                "price_data": {
+                    "currency": currency,
+                    "product_data": {"name": "Envío a domicilio"},
+                    "unit_amount": shipping,
+                },
+                "quantity": 1,
+            }
+        )
+        total += shipping
+
     db = get_db()
     cur = db.execute(
-        "INSERT INTO orders(items, total_cents, status, created_at, "
+        "INSERT INTO orders(items, total_cents, shipping_cents, status, created_at, "
         "customer_name, customer_address, customer_city, customer_department, "
-        "delivery_method) VALUES(?,?, 'pending', ?,?,?,?,?,?)",
+        "delivery_method) VALUES(?,?,?, 'pending', ?,?,?,?,?,?)",
         (
             json.dumps(snapshot),
             total,
+            shipping,
             int(time.time()),
             name,
             address,
