@@ -165,10 +165,26 @@
           deliveryTxt = '<small>👤 ' + escapeHtml(o.customer_name) + (place ? ' · ' + escapeHtml(place) : '') + '</small>' +
             '<small>' + method + '</small>';
         }
+        var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
+          : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
           '<small>' + items + '</small>' + deliveryTxt +
+          (payTxt ? '<small>' + payTxt + '</small>' : '') +
           (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
-          '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>';
+          '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>' +
+          (o.status === 'pending' ? '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button></div>' : '');
+        if (o.status === 'pending') {
+          (function (id, btn) {
+            btn.addEventListener('click', async function () {
+              if (!confirm('¿Confirmas que recibiste el pago del pedido #' + id + '? Se descontará el inventario.')) return;
+              btn.disabled = true;
+              try {
+                await api('/api/admin/orders/' + id + '/paid', { method: 'POST' });
+                loadOrders();
+              } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); btn.disabled = false; }
+            });
+          })(o.id, row.querySelector('.mark-paid'));
+        }
         list.appendChild(row);
       });
     } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }

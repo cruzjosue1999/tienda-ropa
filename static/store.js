@@ -283,7 +283,8 @@
       address: document.getElementById('cust-address').value.trim(),
       city: document.getElementById('cust-city').value.trim(),
       department: document.getElementById('cust-department').value,
-      delivery: (document.querySelector('input[name="delivery"]:checked') || {}).value || ''
+      delivery: (document.querySelector('input[name="delivery"]:checked') || {}).value || '',
+      payment: (document.querySelector('input[name="payment"]:checked') || {}).value || ''
     };
   }
   function prefillCustomer() {
@@ -298,8 +299,44 @@
         var r = document.querySelector('input[name="delivery"][value="' + c.delivery + '"]');
         if (r) r.checked = true;
       }
+      if (c.payment) {
+        var p = document.querySelector('input[name="payment"][value="' + c.payment + '"]');
+        if (p) p.checked = true;
+      }
     } catch (e) {}
   }
+
+  var WHATSAPP = '+504 9527-3914';
+  function showOrderSuccess(d) {
+    var cart = getCart();
+    saveCart([]);
+    renderCart();
+    document.querySelector('.delivery-form').classList.add('hidden');
+    document.querySelectorAll('.drawer-foot .total-row').forEach(function (el) { el.classList.add('hidden'); });
+    checkoutBtn.classList.add('hidden');
+    checkoutError.classList.add('hidden');
+    document.getElementById('order-success-num').textContent =
+      'Tu número de pedido es #' + d.order_id + ' · Total: ' + money(d.total_cents) +
+      (d.shipping_cents ? ' (incluye ' + money(d.shipping_cents) + ' de envío)' : ' (sin costo de envío)');
+    var detail = d.delivery === 'oficina'
+      ? 'Te avisaremos por WhatsApp cuando tu pedido esté listo para recoger en la oficina. 🏢'
+      : 'Haremos tu envío a domicilio en 2 a 4 días hábiles. 📦';
+    document.getElementById('order-success-detail').textContent = detail;
+    var pay = d.payment === 'deposito'
+      ? '💳 Haz tu depósito o transferencia en Banco Atlántida por ' + money(d.total_cents) +
+        ' y envíanos tu comprobante por WhatsApp al ' + WHATSAPP +
+        ' para procesar tu envío cuanto antes.'
+      : '💵 Pagarás ' + money(d.total_cents) + ' en efectivo al recibir tu pedido. ¡Gracias por tu compra! 🙌';
+    document.getElementById('order-success-pay').textContent = pay;
+    document.getElementById('order-success').classList.remove('hidden');
+  }
+  document.getElementById('order-success-close').addEventListener('click', function () {
+    document.getElementById('order-success').classList.add('hidden');
+    document.querySelector('.delivery-form').classList.remove('hidden');
+    document.querySelectorAll('.drawer-foot .total-row').forEach(function (el) { el.classList.remove('hidden'); });
+    checkoutBtn.classList.remove('hidden');
+    closeDrawer();
+  });
 
   checkoutBtn.addEventListener('click', async function () {
     checkoutError.classList.add('hidden');
@@ -319,17 +356,14 @@
         body: JSON.stringify({ items: getCart(), customer: customer })
       });
       var d = await r.json();
-      if (r.ok && d.url) {
-        window.location.href = d.url;
-        return;
-      }
-      throw new Error(d.error || 'No se pudo iniciar el pago.');
+      if (!r.ok || !d.order_id) throw new Error(d.error || 'No se pudo crear el pedido.');
+      showOrderSuccess(d);
     } catch (e) {
       checkoutError.textContent = e.message;
       checkoutError.classList.remove('hidden');
     } finally {
       checkoutBtn.disabled = false;
-      checkoutBtn.textContent = 'Pagar con tarjeta 💳';
+      checkoutBtn.textContent = 'Confirmar pedido ✅';
     }
   });
 

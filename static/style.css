@@ -273,3 +273,19 @@ body { background: var(--cream); color: var(--ink); }
   font-size: .92rem; cursor: pointer;
 }
 .delivery-opt input { accent-color: var(--brand-dark); width: 16px; height: 16px; }
+.delivery-opt span { display: block; line-height: 1.35; }
+.delivery-opt small { display: block; color: #5b6472; font-size: .8rem; margin-top: 2px; }
+.delivery-form h3:not(:first-child) { margin-top: 12px; }
+
+/* Confirmación del pedido */
+.order-success {
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+  padding: 16px; margin-top: 4px; text-align: center;
+}
+.order-success h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.order-success p { margin: 0 0 8px; font-size: .92rem; line-height: 1.45; }
+.order-success .pay-note {
+  background: #fff; border: 1px dashed #86efac; border-radius: 10px;
+  padding: 10px 12px; font-size: .9rem;
+}
+.order-success .btn-primary { margin-top: 6px; width: 100%; }
