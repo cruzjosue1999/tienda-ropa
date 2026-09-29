@@ -4,7 +4,7 @@
   var notice = document.getElementById('notice');
 
   function money(cents) {
-    return new Intl.NumberFormat('es-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    return new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(cents / 100);
   }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {

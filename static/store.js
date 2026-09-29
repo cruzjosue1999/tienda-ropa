@@ -15,7 +15,7 @@
   var products = [];
 
   function money(cents) {
-    return new Intl.NumberFormat('es-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    return new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(cents / 100);
   }
   function getCart() {
     try { return JSON.parse(localStorage.getItem('tienda_cart') || '[]'); } catch (e) { return []; }
