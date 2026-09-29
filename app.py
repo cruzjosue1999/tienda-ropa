@@ -102,6 +102,10 @@ def init_db():
     row = db.execute("SELECT value FROM settings WHERE key='currency'").fetchone()
     if row and (row[0] or "").strip().lower() == "usd":
         db.execute("UPDATE settings SET value='hnl' WHERE key='currency'")
+    # Migración: columna category en products (para filtrar por categorías).
+    cols = [c[1] for c in db.execute("PRAGMA table_info(products)").fetchall()]
+    if "category" not in cols:
+        db.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT ''")
     db.commit()
     db.close()
 
@@ -133,6 +137,7 @@ def product_to_dict(row):
         "stock": row["stock"],
         "photo": row["photo"] or "",
         "active": bool(row["active"]),
+        "category": row["category"] or "",
         "created_at": row["created_at"],
     }
 
@@ -431,6 +436,7 @@ def parse_product_input(data):
         "stock": max(0, stock),
         "photo": (data.get("photo") or "").strip(),
         "active": 1 if data.get("active", True) else 0,
+        "category": (data.get("category") or "").strip(),
     }
 
 
@@ -445,11 +451,11 @@ def admin_create_product():
         return jsonify({"error": "El precio debe ser mayor a cero."}), 400
     db = get_db()
     cur = db.execute(
-        """INSERT INTO products(name, description, price_cents, sizes, sku, stock, photo, active, created_at)
-           VALUES(?,?,?,?,?,?,?,?,?)""",
+        """INSERT INTO products(name, description, price_cents, sizes, sku, stock, photo, active, category, created_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?)""",
         (
             p["name"], p["description"], p["price_cents"], p["sizes"], p["sku"],
-            p["stock"], p["photo"], p["active"], int(time.time()),
+            p["stock"], p["photo"], p["active"], p["category"], int(time.time()),
         ),
     )
     db.commit()
@@ -467,10 +473,10 @@ def admin_update_product(pid):
     db = get_db()
     cur = db.execute(
         """UPDATE products SET name=?, description=?, price_cents=?, sizes=?, sku=?,
-           stock=?, photo=?, active=? WHERE id=?""",
+           stock=?, photo=?, active=?, category=? WHERE id=?""",
         (
             p["name"], p["description"], p["price_cents"], p["sizes"], p["sku"],
-            p["stock"], p["photo"], p["active"], pid,
+            p["stock"], p["photo"], p["active"], p["category"], pid,
         ),
     )
     db.commit()
@@ -555,7 +561,30 @@ def admin_list_orders():
 
 # ---------------- API admin: ajustes ----------------
 SETTING_KEYS = ["store_name", "currency", "stripe_secret_key",
-                "stripe_publishable_key", "stripe_webhook_secret"]
+                "stripe_publishable_key", "stripe_webhook_secret",
+                "tagline", "info_horarios", "info_ubicacion",
+                "info_contacto", "info_pagos", "info_envios"]
+
+
+# Textos informativos que se muestran en la tienda pública.
+INFO_DEFAULTS = {
+    "tagline": "Tu nuevo estilo comienza aquí",
+    "info_horarios": "Lunes a sábado, 9:00 AM – 6:00 PM.",
+    "info_ubicacion": "Honduras. Hacemos envíos a todo el país.",
+    "info_contacto": "Escríbenos para consultas y pedidos. Con gusto te atenderemos.",
+    "info_pagos": "Aceptamos tarjetas de débito y crédito de forma segura.",
+    "info_envios": "Ropa 100% americana. Hacemos envíos por correo a todo Honduras. 🇭🇳",
+}
+
+
+@app.route("/api/info")
+def api_info():
+    """Información pública de la tienda: nombre, eslogan y secciones (pagos, envíos, etc.)."""
+    out = {"store_name": get_setting("store_name", "Mi Tienda"), "currency": get_setting("currency", "hnl")}
+    for k, default in INFO_DEFAULTS.items():
+        v = (get_setting(k) or "").strip()
+        out[k] = v or default
+    return jsonify(out)
 
 
 @app.route("/api/admin/settings", methods=["GET"])
@@ -564,6 +593,12 @@ def admin_get_settings():
     out = {
         "store_name": get_setting("store_name", "Mi Tienda de Ropa"),
         "currency": get_setting("currency", "hnl"),
+        "tagline": get_setting("tagline", INFO_DEFAULTS["tagline"]),
+        "info_horarios": get_setting("info_horarios", ""),
+        "info_ubicacion": get_setting("info_ubicacion", ""),
+        "info_contacto": get_setting("info_contacto", ""),
+        "info_pagos": get_setting("info_pagos", ""),
+        "info_envios": get_setting("info_envios", ""),
     }
     for k in ["stripe_secret_key", "stripe_publishable_key", "stripe_webhook_secret"]:
         v = get_setting(k)
@@ -580,6 +615,10 @@ def admin_put_settings():
     if "currency" in data:
         cur = (data["currency"] or "hnl").strip().lower()
         set_setting("currency", cur if len(cur) == 3 else "hnl")
+    for k in ["tagline", "info_horarios", "info_ubicacion",
+              "info_contacto", "info_pagos", "info_envios"]:
+        if k in data:
+            set_setting(k, (data[k] or "").strip())
     for k in ["stripe_secret_key", "stripe_publishable_key", "stripe_webhook_secret"]:
         if k in data and data[k]:
             set_setting(k, data[k].strip())
