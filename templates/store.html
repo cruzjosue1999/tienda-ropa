@@ -106,14 +106,42 @@
         </select>
       </div>
       <div class="delivery-methods" role="radiogroup" aria-label="Método de entrega">
-        <label class="delivery-opt"><input type="radio" name="delivery" value="domicilio" checked> 🏠 Envío a domicilio</label>
-        <label class="delivery-opt"><input type="radio" name="delivery" value="oficina"> 🏢 Recoger en oficina cercana</label>
+        <label class="delivery-opt"><input type="radio" name="delivery" value="domicilio" checked>
+          <span>🏠 Envío a domicilio
+            <small>✔️ L150 (hasta 5 artículos) · L200 (6 o más) · Depósito previo · 📦 2 a 4 días hábiles</small>
+          </span>
+        </label>
+        <label class="delivery-opt"><input type="radio" name="delivery" value="oficina">
+          <span>🏢 Recoger en oficina cercana
+            <small>✔️ Gratis · Pago contra entrega</small>
+          </span>
+        </label>
+      </div>
+      <h3>💳 Forma de pago</h3>
+      <div class="delivery-methods" role="radiogroup" aria-label="Forma de pago">
+        <label class="delivery-opt"><input type="radio" name="payment" value="efectivo" checked>
+          <span>💵 Efectivo
+            <small>✔️ Pago contra entrega (al recibir tu pedido)</small>
+          </span>
+        </label>
+        <label class="delivery-opt"><input type="radio" name="payment" value="deposito">
+          <span>🏦 Depósito Banco Atlántida
+            <small>✔️ Depósito previo · Envíanos tu comprobante por WhatsApp</small>
+          </span>
+        </label>
       </div>
     </div>
     <div class="total-row ship-row"><span>Envío</span><strong id="cart-shipping">L0.00</strong></div>
     <div class="total-row"><span>Total</span><strong id="cart-total">L0.00</strong></div>
-    <button id="checkout-btn" class="btn-primary">Pagar con tarjeta 💳</button>
+    <button id="checkout-btn" class="btn-primary">Confirmar pedido ✅</button>
     <p id="checkout-error" class="error hidden"></p>
+    <div id="order-success" class="order-success hidden">
+      <h3>🎉 ¡Pedido recibido!</h3>
+      <p id="order-success-num"></p>
+      <p id="order-success-detail"></p>
+      <p id="order-success-pay" class="pay-note"></p>
+      <button id="order-success-close" class="btn-primary">Seguir comprando</button>
+    </div>
   </div>
 </div>
 <div id="drawer-backdrop" class="backdrop hidden"></div>
