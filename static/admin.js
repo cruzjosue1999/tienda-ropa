@@ -167,6 +167,7 @@
         }
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
           '<small>' + items + '</small>' + deliveryTxt +
+          (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
           '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>';
         list.appendChild(row);
       });

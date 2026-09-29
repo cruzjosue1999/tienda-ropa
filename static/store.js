@@ -11,6 +11,7 @@
   var backdrop = document.getElementById('drawer-backdrop');
   var cartItemsEl = document.getElementById('cart-items');
   var cartTotalEl = document.getElementById('cart-total');
+  var cartShippingEl = document.getElementById('cart-shipping');
   var checkoutBtn = document.getElementById('checkout-btn');
   var checkoutError = document.getElementById('checkout-error');
   var closeBtn = document.getElementById('cart-close');
@@ -196,11 +197,25 @@
     cartCount.textContent = n;
   }
 
+  /* Envío: L150 hasta 5 artículos, L200 si son más; gratis al recoger en oficina */
+  function cartQty(cart) {
+    return cart.reduce(function (a, l) { return a + (l.qty || 0); }, 0);
+  }
+  function deliveryMethod() {
+    var r = document.querySelector('input[name="delivery"]:checked');
+    return r ? r.value : 'domicilio';
+  }
+  function shippingCents(cart) {
+    if (deliveryMethod() === 'oficina') return 0;
+    return cartQty(cart) <= 5 ? 15000 : 20000;
+  }
+
   function renderCart() {
     var cart = getCart();
     checkoutError.classList.add('hidden');
     if (!cart.length) {
       cartItemsEl.innerHTML = '<p class="loading">Tu carrito está vacío.</p>';
+      if (cartShippingEl) cartShippingEl.textContent = money(0);
       cartTotalEl.textContent = money(0);
       checkoutBtn.disabled = true;
       return;
@@ -229,7 +244,9 @@
       div.querySelector('[data-a="rm"]').addEventListener('click', function () { bumpQty(idx, -999); });
       cartItemsEl.appendChild(div);
     });
-    cartTotalEl.textContent = money(total);
+    var shipping = shippingCents(cart);
+    if (cartShippingEl) cartShippingEl.textContent = shipping ? money(shipping) : 'Gratis';
+    cartTotalEl.textContent = money(total + shipping);
   }
 
   function bumpQty(idx, d) {
@@ -253,6 +270,10 @@
   cartBtn.addEventListener('click', openDrawer);
   closeBtn.addEventListener('click', closeDrawer);
   backdrop.addEventListener('click', closeDrawer);
+  Array.prototype.forEach.call(
+    document.querySelectorAll('input[name="delivery"]'),
+    function (r) { r.addEventListener('change', renderCart); }
+  );
 
   /* Datos de entrega: se guardan en el teléfono para no pedirlos cada vez */
   var CUST_KEY = 'usstyle_customer';

@@ -105,6 +105,7 @@ body.dark .btn-small { background: #334155; color: #e5e7eb; }
 .qty-ctl { display: flex; align-items: center; gap: 8px; }
 .drawer-foot { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid #e5e7eb; }
 .total-row { display: flex; justify-content: space-between; font-size: 1.1rem; margin-bottom: 10px; }
+.ship-row { font-size: .95rem; color: #4b5563; margin-bottom: 6px; }
 .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; }
 
 /* Auth */
