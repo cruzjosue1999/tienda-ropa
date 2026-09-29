@@ -54,6 +54,7 @@
     document.getElementById('p-price').value = p ? (p.price_cents / 100).toFixed(2) : '';
     document.getElementById('p-stock').value = p ? p.stock : 0;
     document.getElementById('p-sizes').value = p ? (p.sizes || []).join(', ') : '';
+    document.getElementById('p-category').value = p ? (p.category || '') : '';
     document.getElementById('p-sku').value = p ? p.sku : '';
     document.getElementById('p-photo').value = p ? p.photo : '';
     document.getElementById('p-photo-file').value = '';
@@ -94,6 +95,7 @@
       price: document.getElementById('p-price').value,
       stock: document.getElementById('p-stock').value,
       sizes: document.getElementById('p-sizes').value,
+      category: document.getElementById('p-category').value,
       sku: document.getElementById('p-sku').value,
       photo: document.getElementById('p-photo').value,
       active: document.getElementById('p-active').checked
@@ -118,6 +120,7 @@
           (p.photo ? '<img class="thumb" src="' + p.photo + '" alt="">' : '<img class="thumb" alt="">') +
           '<div class="info"><strong>' + escapeHtml(p.name) + '</strong>' +
           '<small>' + money(p.price_cents) + ' · Stock: ' + p.stock +
+          (p.category ? ' · ' + escapeHtml(p.category) : '') +
           ' <span class="badge ' + (p.active ? 'on' : 'off') + '">' + (p.active ? 'visible' : 'oculto') + '</span></small></div>' +
           '<div class="actions"><button class="btn-small b-edit">✏️</button><button class="btn-small b-stock">📦</button><button class="btn-danger b-del">🗑️</button></div>';
         row.querySelector('.b-edit').addEventListener('click', function () { openModal(p); });
@@ -168,6 +171,12 @@
       var s = await api('/api/admin/settings');
       document.getElementById('set-store-name').value = s.store_name || '';
       document.getElementById('set-currency').value = s.currency || 'usd';
+      document.getElementById('set-tagline').value = s.tagline || '';
+      document.getElementById('set-horarios').value = s.info_horarios || '';
+      document.getElementById('set-ubicacion').value = s.info_ubicacion || '';
+      document.getElementById('set-contacto').value = s.info_contacto || '';
+      document.getElementById('set-pagos').value = s.info_pagos || '';
+      document.getElementById('set-envios').value = s.info_envios || '';
       setBadge('sk-status', s.stripe_secret_key);
       setBadge('pk-status', s.stripe_publishable_key);
       setBadge('wh-status', s.stripe_webhook_secret);
@@ -182,7 +191,13 @@
     e.preventDefault();
     var body = {
       store_name: document.getElementById('set-store-name').value,
-      currency: document.getElementById('set-currency').value
+      currency: document.getElementById('set-currency').value,
+      tagline: document.getElementById('set-tagline').value,
+      info_horarios: document.getElementById('set-horarios').value,
+      info_ubicacion: document.getElementById('set-ubicacion').value,
+      info_contacto: document.getElementById('set-contacto').value,
+      info_pagos: document.getElementById('set-pagos').value,
+      info_envios: document.getElementById('set-envios').value
     };
     ['stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret'].forEach(function (k, i) {
       var v = document.getElementById(['set-stripe-secret', 'set-stripe-pk', 'set-stripe-wh'][i]).value.trim();

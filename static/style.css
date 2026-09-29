@@ -148,8 +148,107 @@ body.dark .tab { background: #1e293b; color: #cbd5e1; }
 @media (min-width: 700px) { .modal-card { border-radius: 16px; } }
 .modal-card label { display: block; margin-bottom: 12px; font-size: .9rem; font-weight: 600; }
 .modal-card label input, .modal-card label textarea { margin-top: 6px; font-weight: 400; }
+.form-card .sub-h { font-size: 1rem; margin: 18px 0 6px; }
+.form-card textarea { resize: vertical; }
 .row2 { display: flex; gap: 10px; }
 .row2 label { flex: 1; }
 .check { display: flex !important; align-items: center; gap: 8px; }
 .check input { width: auto; }
 img.preview { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; margin-top: 8px; }
+
+/* ===== Nueva tienda general (inspirada en boutique) ===== */
+:root {
+  --brand: #b76e79;
+  --brand-dark: #8e4a55;
+  --blush: #f6e3e7;
+  --cream: #faf7f5;
+  --ink: #3b2b2f;
+  --serif: Georgia, "Times New Roman", serif;
+}
+body { background: var(--cream); color: var(--ink); }
+
+.brand-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 10px; max-width: 1100px; margin: 0 auto;
+}
+.brand h1 {
+  font-family: var(--serif); font-weight: 400; font-size: 1.9rem;
+  margin: 0; letter-spacing: .5px; color: var(--ink);
+}
+.brand .tagline { font-style: italic; color: var(--brand-dark); margin: 2px 0 0; font-size: .9rem; }
+
+.info-nav {
+  display: flex; gap: 4px; overflow-x: auto; white-space: nowrap;
+  background: var(--blush); padding: 10px 12px;
+  border-top: 1px solid #ecd3d9; border-bottom: 1px solid #ecd3d9;
+  position: sticky; top: 0; z-index: 10;
+}
+.info-nav button {
+  background: none; border: 0; font-size: .95rem; cursor: pointer;
+  padding: 8px 14px; color: var(--ink); text-decoration: underline;
+  text-underline-offset: 3px; flex: 1;
+}
+.info-nav button:hover { color: var(--brand-dark); }
+
+.hero {
+  margin: 14px; border-radius: 18px; overflow: hidden;
+  background: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand) 55%, #d9a3ad 100%);
+  color: #fff; padding: 44px 24px; text-align: center;
+  position: relative;
+}
+.hero::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(255,255,255,.18), transparent 45%),
+              radial-gradient(circle at 80% 70%, rgba(255,255,255,.12), transparent 40%);
+}
+.hero-text { position: relative; }
+.hero h2 { font-family: var(--serif); font-weight: 400; font-size: 2.2rem; margin: 0 0 6px; }
+.hero .tagline { color: #ffe9ee; font-style: italic; margin: 0 0 20px; }
+.btn-hero {
+  display: inline-block; background: #fff; color: var(--brand-dark);
+  font-weight: 700; letter-spacing: 1px; text-decoration: none;
+  padding: 12px 28px; border-radius: 999px; font-size: .95rem;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2);
+}
+
+.cat-section { padding: 6px 14px 0; max-width: 1100px; margin: 0 auto; }
+.section-title {
+  font-family: var(--serif); font-style: italic; font-weight: 400;
+  font-size: 1.5rem; color: var(--brand-dark); margin: 18px 0 12px;
+  text-align: center;
+}
+.cat-pills { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.pill {
+  background: var(--blush); border: 1px solid #e8c9d1; color: var(--ink);
+  border-radius: 999px; padding: 10px 22px; font-size: .95rem; cursor: pointer;
+  font-style: italic; font-family: var(--serif);
+}
+.pill.active { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
+
+#catalogo { padding-top: 6px; }
+.grid { padding: 0 14px 24px; }
+.card { position: relative; border: 1px solid #f0e2e5; }
+.cat-badge {
+  position: absolute; top: 8px; left: 8px;
+  background: rgba(142,74,85,.92); color: #fff; font-size: .72rem;
+  padding: 4px 10px; border-radius: 999px; font-weight: 600;
+}
+
+.store-foot {
+  text-align: center; padding: 28px 18px 40px; margin-top: 10px;
+  background: var(--blush); border-top: 1px solid #ecd3d9;
+}
+.store-foot h3 { font-family: var(--serif); font-weight: 400; font-size: 1.4rem; margin: 0 0 4px; }
+.store-foot .tagline { font-style: italic; color: var(--brand-dark); margin: 0 0 10px; }
+.foot-line { font-size: .9rem; color: var(--ink); max-width: 520px; margin: 0 auto; }
+
+.info-card { text-align: left; }
+.info-body { white-space: pre-line; line-height: 1.6; font-size: 1rem; margin: 4px 0 10px; }
+
+.cart-btn {
+  background: var(--brand-dark); color: #fff; font-size: 1.15rem;
+  border: 0; border-radius: 999px; padding: 10px 16px; cursor: pointer;
+}
+.btn-primary { background: var(--brand-dark); }
+.btn-primary:hover { background: var(--brand); }
+.price { color: var(--brand-dark); }

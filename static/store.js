@@ -1,7 +1,9 @@
-/* Tienda pública: catálogo, carrito (localStorage) y checkout */
+/* Tienda pública: info, categorías, catálogo, carrito (localStorage) y checkout */
 (function () {
   'use strict';
   var catalog = document.getElementById('catalog');
+  var catalogTitle = document.getElementById('catalog-title');
+  var catPills = document.getElementById('cat-pills');
   var notice = document.getElementById('notice');
   var cartBtn = document.getElementById('cart-btn');
   var cartCount = document.getElementById('cart-count');
@@ -12,10 +14,26 @@
   var checkoutBtn = document.getElementById('checkout-btn');
   var checkoutError = document.getElementById('checkout-error');
   var closeBtn = document.getElementById('cart-close');
+  var infoModal = document.getElementById('info-modal');
   var products = [];
+  var infoData = {};
+  var activeCat = '';
+
+  var INFO_LABELS = {
+    info_horarios: 'Horarios',
+    info_ubicacion: 'Ubicación',
+    info_contacto: 'Contáctenos',
+    info_pagos: 'Pagos',
+    info_envios: 'Envíos'
+  };
 
   function money(cents) {
     return new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(cents / 100);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
   }
   function getCart() {
     try { return JSON.parse(localStorage.getItem('tienda_cart') || '[]'); } catch (e) { return []; }
@@ -25,31 +43,101 @@
     renderCartBadge();
   }
   function findProduct(id) { return products.find(function (p) { return p.id === id; }); }
-
   function showNotice(msg) {
     notice.textContent = msg;
     notice.classList.remove('hidden');
   }
 
-  async function loadProducts() {
+  /* ---------- Información de la tienda (nav) ---------- */
+  async function loadInfo() {
     try {
-      var r = await fetch('/api/products');
-      products = await r.json();
-    } catch (e) {
-      catalog.innerHTML = '<p class="loading">No se pudieron cargar los productos. Revisa tu conexión.</p>';
-      return;
+      var r = await fetch('/api/info');
+      infoData = await r.json();
+    } catch (e) { infoData = {}; return; }
+    if (infoData.store_name) {
+      document.getElementById('store-name').textContent = infoData.store_name;
+      document.getElementById('hero-title').textContent = infoData.store_name;
+      document.getElementById('foot-name').textContent = infoData.store_name;
+      document.title = infoData.store_name;
     }
-    if (!products.length) {
-      catalog.innerHTML = '<p class="loading">Aún no hay productos en la tienda. Vuelve pronto. 👕</p>';
-      return;
-    }
-    catalog.innerHTML = '';
+    var tag = infoData.tagline || '';
+    document.getElementById('store-tagline').textContent = tag;
+    document.getElementById('hero-sub').textContent = tag;
+    document.getElementById('foot-tagline').textContent = tag;
+    if (infoData.info_envios) document.getElementById('foot-envios').textContent = infoData.info_envios;
+  }
+
+  document.querySelectorAll('.info-nav button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-info');
+      document.getElementById('info-title').textContent = INFO_LABELS[key] || 'Información';
+      document.getElementById('info-body').textContent = infoData[key] || 'Próximamente.';
+      infoModal.classList.remove('hidden');
+    });
+  });
+  document.getElementById('info-close').addEventListener('click', function () {
+    infoModal.classList.add('hidden');
+  });
+  infoModal.addEventListener('click', function (e) { if (e.target === infoModal) infoModal.classList.add('hidden'); });
+
+  /* ---------- Catálogo y categorías ---------- */
+  function categories() {
+    var seen = {};
     products.forEach(function (p) {
+      var c = (p.category || '').trim();
+      if (c) seen[c] = true;
+    });
+    return Object.keys(seen).sort();
+  }
+
+  function renderPills() {
+    var cats = categories();
+    catPills.innerHTML = '';
+    if (!cats.length) {
+      catPills.parentElement.classList.add('hidden');
+      return;
+    }
+    catPills.parentElement.classList.remove('hidden');
+    var all = document.createElement('button');
+    all.className = 'pill' + (activeCat === '' ? ' active' : '');
+    all.textContent = 'Todo';
+    all.addEventListener('click', function () { setCategory(''); });
+    catPills.appendChild(all);
+    cats.forEach(function (c) {
+      var b = document.createElement('button');
+      b.className = 'pill' + (activeCat === c ? ' active' : '');
+      b.textContent = c;
+      b.addEventListener('click', function () { setCategory(c); });
+      catPills.appendChild(b);
+    });
+  }
+
+  function setCategory(c) {
+    activeCat = c;
+    renderPills();
+    renderCatalog();
+    catalogTitle.textContent = c || 'Novedades';
+    document.getElementById('catalogo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderCatalog() {
+    var list = activeCat
+      ? products.filter(function (p) { return (p.category || '').trim() === activeCat; })
+      : products;
+    catalog.innerHTML = '';
+    if (!list.length) {
+      catalog.innerHTML = '<p class="loading">' +
+        (products.length ? 'No hay productos en esta categoría.' : 'Aún no hay productos en la tienda. Vuelve pronto. 🛍️') +
+        '</p>';
+      return;
+    }
+    list.forEach(function (p) {
       var card = document.createElement('article');
       card.className = 'card';
       var photo = p.photo
         ? '<img src="' + p.photo + '" alt="' + escapeHtml(p.name) + '" loading="lazy">'
-        : '<div class="no-photo">👕</div>';
+        : '<div class="no-photo">🛍️</div>';
+      var catBadge = p.category ? '<span class="cat-badge">' + escapeHtml(p.category) + '</span>' : '';
       var sizeOpts = (p.sizes || []).map(function (s) {
         return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>';
       }).join('');
@@ -59,7 +147,7 @@
         : (p.stock <= 3 ? '<span class="stock low">¡Solo quedan ' + p.stock + '!</span>'
                         : '<span class="stock">' + p.stock + ' disponibles</span>');
       card.innerHTML =
-        photo +
+        photo + catBadge +
         '<div class="card-body">' +
           '<h3>' + escapeHtml(p.name) + '</h3>' +
           '<div class="price">' + money(p.price_cents) + '</div>' +
@@ -81,12 +169,19 @@
     renderCartBadge();
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+  async function loadProducts() {
+    try {
+      var r = await fetch('/api/products');
+      products = await r.json();
+    } catch (e) {
+      catalog.innerHTML = '<p class="loading">No se pudieron cargar los productos. Revisa tu conexión.</p>';
+      return;
+    }
+    renderPills();
+    renderCatalog();
   }
 
+  /* ---------- Carrito ---------- */
   function addToCart(id, size, qty) {
     var cart = getCart();
     var line = cart.find(function (l) { return l.id === id && l.size === size; });
@@ -184,5 +279,6 @@
     }
   });
 
+  loadInfo();
   loadProducts();
 })();
