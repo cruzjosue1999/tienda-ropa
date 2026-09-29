@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>¡Pago exitoso!</title>
+<meta name="theme-color" content="#111827">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="auth-wrap">
+  <div class="auth-card center">
+    <div class="big-emoji">✅</div>
+    <h1>¡Gracias por tu compra!</h1>
+    <p id="order-msg">Estamos confirmando tu pago…</p>
+    <a href="/" class="btn-primary">Volver a la tienda</a>
+  </div>
+</main>
+<script>
+(async function() {
+  var params = new URLSearchParams(window.location.search);
+  var sid = params.get('session_id');
+  localStorage.removeItem('tienda_cart');
+  if (!sid) { document.getElementById('order-msg').textContent = 'Tu pago fue procesado.'; return; }
+  try {
+    var r = await fetch('/api/confirm-payment', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sid})
+    });
+    var d = await r.json();
+    document.getElementById('order-msg').textContent = d.paid
+      ? 'Tu pago fue confirmado. ¡Te avisaremos con los detalles del envío!'
+      : 'Tu pago está en proceso de confirmación.';
+  } catch (e) {
+    document.getElementById('order-msg').textContent = 'Tu pago fue procesado.';
+  }
+})();
+</script>
+</body>
+</html>

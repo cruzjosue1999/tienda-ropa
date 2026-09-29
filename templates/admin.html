@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Tienda Admin</title>
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="/admin/manifest.json">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon-admin.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tienda Admin">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark">
+<header class="topbar">
+  <h1>⚙️ Tienda Admin</h1>
+  <button id="logout-btn" class="btn-ghost">Salir</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="productos">Productos</button>
+  <button class="tab" data-tab="pedidos">Pedidos</button>
+  <button class="tab" data-tab="ajustes">Ajustes</button>
+</nav>
+
+<main>
+  <div id="notice" class="notice hidden"></div>
+
+  <section id="tab-productos" class="tab-panel">
+    <button id="new-product-btn" class="btn-primary">＋ Nuevo producto</button>
+    <div id="product-list" class="admin-list"></div>
+  </section>
+
+  <section id="tab-pedidos" class="tab-panel hidden">
+    <div id="order-list" class="admin-list"></div>
+  </section>
+
+  <section id="tab-ajustes" class="tab-panel hidden">
+    <form id="settings-form" class="form-card">
+      <h2>Ajustes de la tienda</h2>
+      <label>Nombre de la tienda
+        <input type="text" id="set-store-name">
+      </label>
+      <label>Moneda (ej: usd)
+        <input type="text" id="set-currency" maxlength="3">
+      </label>
+      <label>Clave secreta de Stripe <span id="sk-status" class="badge"></span>
+        <input type="password" id="set-stripe-secret" placeholder="sk_live_… o sk_test_…" autocomplete="off">
+      </label>
+      <label>Clave pública de Stripe <span id="pk-status" class="badge"></span>
+        <input type="text" id="set-stripe-pk" placeholder="pk_live_… o pk_test_…" autocomplete="off">
+      </label>
+      <label>Secreto del webhook de Stripe <span id="wh-status" class="badge"></span>
+        <input type="password" id="set-stripe-wh" placeholder="whsec_…" autocomplete="off">
+      </label>
+      <button type="submit" class="btn-primary">Guardar ajustes</button>
+      <p class="hint">Las claves solo se guardan en el servidor, nunca se envían al cliente.</p>
+    </form>
+
+    <form id="password-form" class="form-card">
+      <h2>Cambiar contraseña</h2>
+      <label>Contraseña actual
+        <input type="password" id="pw-current" autocomplete="current-password">
+      </label>
+      <label>Nueva contraseña (mínimo 8 caracteres)
+        <input type="password" id="pw-new" autocomplete="new-password">
+      </label>
+      <button type="submit" class="btn-primary">Cambiar contraseña</button>
+    </form>
+  </section>
+</main>
+
+<div id="product-modal" class="modal hidden" role="dialog" aria-label="Producto">
+  <div class="modal-card">
+    <div class="drawer-head">
+      <h2 id="modal-title">Nuevo producto</h2>
+      <button id="modal-close" class="icon-btn" aria-label="Cerrar">✕</button>
+    </div>
+    <form id="product-form">
+      <input type="hidden" id="p-id">
+      <label>Nombre *<input type="text" id="p-name" required></label>
+      <label>Descripción<textarea id="p-desc" rows="2"></textarea></label>
+      <div class="row2">
+        <label>Precio *<input type="number" id="p-price" step="0.01" min="0.01" required></label>
+        <label>Stock<input type="number" id="p-stock" min="0" value="0"></label>
+      </div>
+      <label>Tallas (separadas por coma, ej: S, M, L)<input type="text" id="p-sizes" placeholder="S, M, L, XL"></label>
+      <label>SKU / código<input type="text" id="p-sku"></label>
+      <label>Foto
+        <input type="file" id="p-photo-file" accept="image/*">
+        <input type="hidden" id="p-photo">
+        <img id="p-photo-preview" class="preview hidden" alt="Vista previa">
+      </label>
+      <label class="check"><input type="checkbox" id="p-active" checked> Visible en la tienda</label>
+      <button type="submit" class="btn-primary">Guardar producto</button>
+      <p id="product-error" class="error hidden"></p>
+    </form>
+  </div>
+</div>
+
+<script src="/static/admin.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/admin/sw.js', {scope: '/admin/'}).catch(function(){});
+}
+</script>
+</body>
+</html>

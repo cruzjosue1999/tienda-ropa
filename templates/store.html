@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{{ store_name }}</title>
+<meta name="description" content="{{ store_name }} - Tienda de ropa">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ store_name }}">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1 id="store-name">{{ store_name }}</h1>
+  <button id="cart-btn" class="cart-btn" aria-label="Ver carrito">🛒 <span id="cart-count">0</span></button>
+</header>
+
+<main>
+  <div id="notice" class="notice hidden"></div>
+  <section id="catalog" class="grid" aria-live="polite">
+    <p class="loading">Cargando productos…</p>
+  </section>
+</main>
+
+<div id="cart-drawer" class="drawer hidden" role="dialog" aria-label="Carrito">
+  <div class="drawer-head">
+    <h2>Tu carrito</h2>
+    <button id="cart-close" class="icon-btn" aria-label="Cerrar">✕</button>
+  </div>
+  <div id="cart-items" class="cart-items"></div>
+  <div class="drawer-foot">
+    <div class="total-row"><span>Total</span><strong id="cart-total">$0.00</strong></div>
+    <button id="checkout-btn" class="btn-primary">Pagar con tarjeta 💳</button>
+    <p id="checkout-error" class="error hidden"></p>
+  </div>
+</div>
+<div id="drawer-backdrop" class="backdrop hidden"></div>
+
+<script src="/static/store.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(function(){});
+}
+</script>
+</body>
+</html>

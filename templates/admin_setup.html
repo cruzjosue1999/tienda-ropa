@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Crear contraseña - Tienda Admin</title>
+<meta name="theme-color" content="#111827">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark">
+<main class="auth-wrap">
+  <div class="auth-card">
+    <h1>👋 Bienvenido</h1>
+    <p>Crea la contraseña de administrador (mínimo 8 caracteres). Guárdala bien.</p>
+    <form id="setup-form">
+      <input type="password" id="password" placeholder="Nueva contraseña" autocomplete="new-password" required minlength="8">
+      <input type="password" id="password2" placeholder="Repite la contraseña" autocomplete="new-password" required minlength="8">
+      <button type="submit" class="btn-primary">Crear y entrar</button>
+    </form>
+    <p id="setup-error" class="error hidden"></p>
+  </div>
+</main>
+<script>
+document.getElementById('setup-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var err = document.getElementById('setup-error');
+  err.classList.add('hidden');
+  var p1 = document.getElementById('password').value;
+  var p2 = document.getElementById('password2').value;
+  if (p1 !== p2) { err.textContent = 'Las contraseñas no coinciden.'; err.classList.remove('hidden'); return; }
+  var r = await fetch('/api/setup', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: p1})
+  });
+  var d = await r.json();
+  if (r.ok) { window.location.href = '/admin'; }
+  else { err.textContent = d.error || 'Error.'; err.classList.remove('hidden'); }
+});
+</script>
+</body>
+</html>

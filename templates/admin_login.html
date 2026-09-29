@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Entrar - Tienda Admin</title>
+<meta name="theme-color" content="#111827">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark">
+<main class="auth-wrap">
+  <div class="auth-card">
+    <h1>🔒 Tienda Admin</h1>
+    <p>Escribe tu contraseña para entrar.</p>
+    <form id="login-form">
+      <input type="password" id="password" placeholder="Contraseña" autocomplete="current-password" required>
+      <button type="submit" class="btn-primary">Entrar</button>
+    </form>
+    <p id="login-error" class="error hidden"></p>
+  </div>
+</main>
+<script>
+document.getElementById('login-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var err = document.getElementById('login-error');
+  err.classList.add('hidden');
+  var r = await fetch('/api/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: document.getElementById('password').value})
+  });
+  var d = await r.json();
+  if (r.ok) { window.location.href = '/admin'; }
+  else { err.textContent = d.error || 'Error al entrar.'; err.classList.remove('hidden'); }
+});
+</script>
+</body>
+</html>
