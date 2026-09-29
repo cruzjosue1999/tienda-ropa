@@ -97,6 +97,11 @@ def init_db():
         );
         """
     )
+    # Migración de moneda: la tienda ahora usa lempiras (HNL).
+    # Si la BD ya tenía "usd" guardado, se cambia a "hnl" automáticamente.
+    row = db.execute("SELECT value FROM settings WHERE key='currency'").fetchone()
+    if row and (row[0] or "").strip().lower() == "usd":
+        db.execute("UPDATE settings SET value='hnl' WHERE key='currency'")
     db.commit()
     db.close()
 
@@ -217,7 +222,7 @@ def manifest():
                 {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
                 {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
                 {
-                    "src": "/static/icon-512.png",
+                    "src": "/static/icon-maskable-512.png",
                     "sizes": "512x512",
                     "type": "image/png",
                     "purpose": "maskable",
@@ -251,8 +256,46 @@ def admin_manifest():
                     "sizes": "512x512",
                     "type": "image/png",
                 },
+                {
+                    "src": "/static/icon-admin-maskable-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "maskable",
+                },
             ],
         }
+    )
+
+
+# Android (Google Play / TWA): verificación Digital Asset Links.
+# Después de subir el .aab a Play Console, copia la huella SHA-256 de la
+# "clave de firma de la app" y pégala en ASSETLINK_FINGERPRINTS.
+ASSETLINK_FINGERPRINTS = [
+    # "AA:BB:CC:DD:...",
+]
+
+
+@app.route("/.well-known/assetlinks.json")
+def assetlinks():
+    return jsonify(
+        [
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": "com.tiendaropa.app",
+                    "sha256_cert_fingerprints": ASSETLINK_FINGERPRINTS,
+                },
+            },
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": "com.tiendaropa.admin",
+                    "sha256_cert_fingerprints": ASSETLINK_FINGERPRINTS,
+                },
+            },
+        ]
     )
 
 
@@ -520,7 +563,7 @@ SETTING_KEYS = ["store_name", "currency", "stripe_secret_key",
 def admin_get_settings():
     out = {
         "store_name": get_setting("store_name", "Mi Tienda de Ropa"),
-        "currency": get_setting("currency", "usd"),
+        "currency": get_setting("currency", "hnl"),
     }
     for k in ["stripe_secret_key", "stripe_publishable_key", "stripe_webhook_secret"]:
         v = get_setting(k)
@@ -535,8 +578,8 @@ def admin_put_settings():
     if "store_name" in data:
         set_setting("store_name", (data["store_name"] or "").strip() or "Mi Tienda de Ropa")
     if "currency" in data:
-        cur = (data["currency"] or "usd").strip().lower()
-        set_setting("currency", cur if len(cur) == 3 else "usd")
+        cur = (data["currency"] or "hnl").strip().lower()
+        set_setting("currency", cur if len(cur) == 3 else "hnl")
     for k in ["stripe_secret_key", "stripe_publishable_key", "stripe_webhook_secret"]:
         if k in data and data[k]:
             set_setting(k, data[k].strip())
@@ -549,7 +592,7 @@ def _validate_cart(items):
     if not isinstance(items, list) or not items:
         raise ValueError("El carrito está vacío.")
     db = get_db()
-    currency = get_setting("currency", "usd")
+    currency = get_setting("currency", "hnl")
     line_items = []
     snapshot = []
     total = 0
