@@ -254,15 +254,48 @@
   closeBtn.addEventListener('click', closeDrawer);
   backdrop.addEventListener('click', closeDrawer);
 
+  /* Datos de entrega: se guardan en el teléfono para no pedirlos cada vez */
+  var CUST_KEY = 'usstyle_customer';
+  function readCustomer() {
+    return {
+      name: document.getElementById('cust-name').value.trim(),
+      address: document.getElementById('cust-address').value.trim(),
+      city: document.getElementById('cust-city').value.trim(),
+      department: document.getElementById('cust-department').value,
+      delivery: (document.querySelector('input[name="delivery"]:checked') || {}).value || ''
+    };
+  }
+  function prefillCustomer() {
+    try {
+      var c = JSON.parse(localStorage.getItem(CUST_KEY) || 'null');
+      if (!c) return;
+      if (c.name) document.getElementById('cust-name').value = c.name;
+      if (c.address) document.getElementById('cust-address').value = c.address;
+      if (c.city) document.getElementById('cust-city').value = c.city;
+      if (c.department) document.getElementById('cust-department').value = c.department;
+      if (c.delivery) {
+        var r = document.querySelector('input[name="delivery"][value="' + c.delivery + '"]');
+        if (r) r.checked = true;
+      }
+    } catch (e) {}
+  }
+
   checkoutBtn.addEventListener('click', async function () {
     checkoutError.classList.add('hidden');
+    var customer = readCustomer();
+    if (!customer.name || !customer.address || !customer.city || !customer.department) {
+      checkoutError.textContent = 'Completa tu nombre, dirección, ciudad y departamento para el envío.';
+      checkoutError.classList.remove('hidden');
+      return;
+    }
+    try { localStorage.setItem(CUST_KEY, JSON.stringify(customer)); } catch (e) {}
     checkoutBtn.disabled = true;
     checkoutBtn.textContent = 'Procesando…';
     try {
       var r = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: getCart() })
+        body: JSON.stringify({ items: getCart(), customer: customer })
       });
       var d = await r.json();
       if (r.ok && d.url) {
@@ -281,4 +314,5 @@
 
   loadInfo();
   loadProducts();
+  prefillCustomer();
 })();

@@ -2,7 +2,6 @@
 (function () {
   'use strict';
   var notice = document.getElementById('notice');
-  var currentUploadId = '';
 
   function money(cents) {
     return new Intl.NumberFormat('es-HN', { style: 'currency', currency: 'HNL' }).format(cents / 100);
@@ -59,7 +58,6 @@
     document.getElementById('p-sku').value = p ? p.sku : '';
     document.getElementById('p-photo').value = p ? p.photo : '';
     document.getElementById('p-photo-file').value = '';
-    currentUploadId = '';
     var prev = document.getElementById('p-photo-preview');
     if (p && p.photo) { prev.src = p.photo; prev.classList.remove('hidden'); }
     else { prev.classList.add('hidden'); }
@@ -80,7 +78,6 @@
     try {
       var d = await api('/api/upload', { method: 'POST', body: fd });
       document.getElementById('p-photo').value = d.url;
-      currentUploadId = d.upload_id || '';
       var prev = document.getElementById('p-photo-preview');
       prev.src = d.url; prev.classList.remove('hidden');
       showNotice('Foto subida ✅');
@@ -101,7 +98,6 @@
       category: document.getElementById('p-category').value,
       sku: document.getElementById('p-sku').value,
       photo: document.getElementById('p-photo').value,
-      photo_upload_id: currentUploadId,
       active: document.getElementById('p-active').checked
     };
     try {
@@ -162,8 +158,16 @@
         var row = document.createElement('div');
         row.className = 'admin-row';
         var d = new Date(o.created_at * 1000);
+        var deliveryTxt = '';
+        if (o.customer_name) {
+          var place = [o.customer_address, o.customer_city, o.customer_department].filter(function (x) { return x; }).join(', ');
+          var method = o.delivery_method === 'oficina' ? '🏢 Recoger en oficina cercana' : '🏠 Envío a domicilio';
+          deliveryTxt = '<small>👤 ' + escapeHtml(o.customer_name) + (place ? ' · ' + escapeHtml(place) : '') + '</small>' +
+            '<small>' + method + '</small>';
+        }
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
-          '<small>' + items + '</small><small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>';
+          '<small>' + items + '</small>' + deliveryTxt +
+          '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>';
         list.appendChild(row);
       });
     } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
