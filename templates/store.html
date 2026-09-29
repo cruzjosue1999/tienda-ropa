@@ -77,6 +77,39 @@
   </div>
   <div id="cart-items" class="cart-items"></div>
   <div class="drawer-foot">
+    <div class="delivery-form">
+      <h3>📦 Datos de entrega</h3>
+      <input id="cust-name" type="text" placeholder="Nombre completo" autocomplete="name" maxlength="120">
+      <input id="cust-address" type="text" placeholder="Dirección (colonia, calle, referencia)" autocomplete="street-address" maxlength="200">
+      <div class="form-row">
+        <input id="cust-city" type="text" placeholder="Ciudad" autocomplete="address-level2" maxlength="80">
+        <select id="cust-department" aria-label="Departamento">
+          <option value="">Departamento…</option>
+          <option>Atlántida</option>
+          <option>Choluteca</option>
+          <option>Colón</option>
+          <option>Comayagua</option>
+          <option>Copán</option>
+          <option>Cortés</option>
+          <option>El Paraíso</option>
+          <option>Francisco Morazán</option>
+          <option>Gracias a Dios</option>
+          <option>Intibucá</option>
+          <option>Islas de la Bahía</option>
+          <option>La Paz</option>
+          <option>Lempira</option>
+          <option>Ocotepeque</option>
+          <option>Olancho</option>
+          <option>Santa Bárbara</option>
+          <option>Valle</option>
+          <option>Yoro</option>
+        </select>
+      </div>
+      <div class="delivery-methods" role="radiogroup" aria-label="Método de entrega">
+        <label class="delivery-opt"><input type="radio" name="delivery" value="domicilio" checked> 🏠 Envío a domicilio</label>
+        <label class="delivery-opt"><input type="radio" name="delivery" value="oficina"> 🏢 Recoger en oficina cercana</label>
+      </div>
+    </div>
     <div class="total-row"><span>Total</span><strong id="cart-total">L0.00</strong></div>
     <button id="checkout-btn" class="btn-primary">Pagar con tarjeta 💳</button>
     <p id="checkout-error" class="error hidden"></p>
