@@ -167,24 +167,51 @@
         }
         var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
           : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
+        var actions = '';
+        if (o.status === 'pending') {
+          actions = '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button>' +
+            '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
+        } else if (o.status === 'paid') {
+          actions = '<div class="actions"><button class="btn-small mark-unpaid">↩️ No pagado</button>' +
+            '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
+        } else {
+          actions = '<div class="actions"><button class="btn-small del-order">🗑️ Eliminar</button></div>';
+        }
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
           '<small>' + items + '</small>' + deliveryTxt +
           (payTxt ? '<small>' + payTxt + '</small>' : '') +
           (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
           '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>' +
-          (o.status === 'pending' ? '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button></div>' : '');
-        if (o.status === 'pending') {
-          (function (id, btn) {
-            btn.addEventListener('click', async function () {
-              if (!confirm('¿Confirmas que recibiste el pago del pedido #' + id + '? Se descontará el inventario.')) return;
-              btn.disabled = true;
-              try {
-                await api('/api/admin/orders/' + id + '/paid', { method: 'POST' });
-                loadOrders();
-              } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); btn.disabled = false; }
-            });
-          })(o.id, row.querySelector('.mark-paid'));
-        }
+          actions;
+        (function (id, rowEl) {
+          var paidBtn = rowEl.querySelector('.mark-paid');
+          if (paidBtn) paidBtn.addEventListener('click', async function () {
+            if (!confirm('¿Confirmas que recibiste el pago del pedido #' + id + '? Se descontará el inventario.')) return;
+            paidBtn.disabled = true;
+            try {
+              await api('/api/admin/orders/' + id + '/paid', { method: 'POST' });
+              loadOrders();
+            } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); paidBtn.disabled = false; }
+          });
+          var unpaidBtn = rowEl.querySelector('.mark-unpaid');
+          if (unpaidBtn) unpaidBtn.addEventListener('click', async function () {
+            if (!confirm('¿Marcar el pedido #' + id + ' como NO pagado? Las unidades volverán al inventario.')) return;
+            unpaidBtn.disabled = true;
+            try {
+              await api('/api/admin/orders/' + id + '/unpaid', { method: 'POST' });
+              loadOrders();
+            } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); unpaidBtn.disabled = false; }
+          });
+          var delBtn = rowEl.querySelector('.del-order');
+          if (delBtn) delBtn.addEventListener('click', async function () {
+            if (!confirm('¿Eliminar el pedido #' + id + ' para siempre? Si estaba pagado, las unidades volverán al inventario.')) return;
+            delBtn.disabled = true;
+            try {
+              await api('/api/admin/orders/' + id, { method: 'DELETE' });
+              loadOrders();
+            } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); delBtn.disabled = false; }
+          });
+        })(o.id, row);
         list.appendChild(row);
       });
     } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
