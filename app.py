@@ -277,6 +277,9 @@ def init_db():
     # Migración: costo de envío guardado en el pedido.
     if "shipping_cents" not in ocols:
         db.execute("ALTER TABLE orders ADD COLUMN shipping_cents INTEGER DEFAULT 0")
+    # Migración: forma de pago elegida por el cliente (efectivo / deposito).
+    if "payment_method" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT ''")
     db.commit()
     try:
         if isinstance(db, _TursoConn):
@@ -783,10 +786,20 @@ def admin_list_orders():
                 "customer_city": r["customer_city"] or "",
                 "customer_department": r["customer_department"] or "",
                 "delivery_method": r["delivery_method"] or "",
+                "payment_method": r["payment_method"] or "",
                 "shipping_cents": r["shipping_cents"] if r["shipping_cents"] else 0,
             }
         )
     return jsonify(out)
+
+
+@app.route("/api/admin/orders/<int:order_id>/paid", methods=["POST"])
+@login_required
+def admin_mark_order_paid(order_id):
+    """El dueño confirma que recibió el pago (efectivo o depósito):
+    marca el pedido como pagado y descuenta el stock."""
+    _finalize_order(order_id)
+    return jsonify({"ok": True})
 
 
 # ---------------- API admin: ajustes ----------------
@@ -802,8 +815,8 @@ INFO_DEFAULTS = {
     "info_horarios": "Lunes a sábado, 9:00 AM – 6:00 PM.",
     "info_ubicacion": "Honduras. Hacemos envíos a todo el país.",
     "info_contacto": "Escríbenos para consultas y pedidos. Con gusto te atenderemos.",
-    "info_pagos": "Aceptamos tarjetas de débito y crédito de forma segura.",
-    "info_envios": "Ropa 100% americana. Hacemos envíos por correo a todo Honduras. 🇭🇳",
+    "info_pagos": "💵 Efectivo (pago contra entrega) y 🏦 depósito o transferencia en Banco Atlántida (depósito previo). Escríbenos por WhatsApp al +504 9527-3914 y te pasamos los datos de la cuenta.",
+    "info_envios": "🚚 Envío a domicilio a todo Honduras: L150 (hasta 5 artículos), L200 (6 o más). Recoger en oficina cercana: gratis. 📦 Entrega en 2 a 4 días hábiles.",
 }
 
 
@@ -907,6 +920,11 @@ def _validate_cart(items):
 
 @app.route("/api/checkout", methods=["POST"])
 def api_checkout():
+    """Crea el pedido con la forma de pago elegida (efectivo / depósito).
+
+    Ya no redirige a Stripe: el pedido queda 'pending' y el dueño lo marca
+    como pagado desde el admin cuando recibe el efectivo o el depósito.
+    """
     data = request.get_json(force=True, silent=True) or {}
     customer = data.get("customer") or {}
     name = (customer.get("name") or "").strip()
@@ -914,6 +932,7 @@ def api_checkout():
     city = (customer.get("city") or "").strip()
     department = (customer.get("department") or "").strip()
     delivery = (customer.get("delivery") or "").strip()
+    payment = (customer.get("payment") or "").strip()
     if not name or not address or not city or not department:
         return (
             jsonify(
@@ -935,49 +954,31 @@ def api_checkout():
             ),
             400,
         )
-    secret = get_setting("stripe_secret_key")
-    if not secret:
+    if payment not in ("efectivo", "deposito"):
         return (
-            jsonify(
-                {
-                    "error": "Los pagos con tarjeta aún no están configurados. "
-                    "El dueño de la tienda debe agregar su clave de Stripe en los ajustes."
-                }
-            ),
+            jsonify({"error": "Elige la forma de pago: efectivo o depósito."}),
             400,
         )
-    data = request.get_json(force=True, silent=True) or {}
     try:
-        line_items, total, snapshot = _validate_cart(data.get("items"))
+        _line_items, total, snapshot = _validate_cart(data.get("items"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
     # Costo de envío: L150 hasta 5 artículos, L200 si son más.
     # Recoger en oficina cercana no tiene costo.
-    currency = get_setting("currency", "hnl")
     total_qty = sum(s["qty"] for s in snapshot)
     if delivery == "oficina":
         shipping = 0
     else:
         shipping = 15000 if total_qty <= 5 else 20000
-    if shipping:
-        line_items.append(
-            {
-                "price_data": {
-                    "currency": currency,
-                    "product_data": {"name": "Envío a domicilio"},
-                    "unit_amount": shipping,
-                },
-                "quantity": 1,
-            }
-        )
-        total += shipping
+    total += shipping
 
     db = get_db()
     cur = db.execute(
         "INSERT INTO orders(items, total_cents, shipping_cents, status, created_at, "
         "customer_name, customer_address, customer_city, customer_department, "
-        "delivery_method) VALUES(?,?,?, 'pending', ?,?,?,?,?,?)",
+        "delivery_method, payment_method) "
+        "VALUES(?,?,?, 'pending', ?,?,?,?,?,?,?)",
         (
             json.dumps(snapshot),
             total,
@@ -988,38 +989,20 @@ def api_checkout():
             city,
             department,
             delivery,
+            payment,
         ),
     )
     order_id = cur.lastrowid
     db.commit()
-
-    stripe.api_key = secret
-    base_url = os.environ.get("BASE_URL", request.host_url.rstrip("/"))
-    try:
-        checkout_session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=line_items,
-            mode="payment",
-            success_url=f"{base_url}/exito?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{base_url}/cancelado",
-            metadata={
-                "order_id": str(order_id),
-                "cliente": name[:120],
-                "entrega": delivery,
-                "ciudad": f"{city}, {department}"[:120],
-            },
-        )
-    except Exception as e:
-        db.execute("UPDATE orders SET status='error' WHERE id=?", (order_id,))
-        db.commit()
-        return jsonify({"error": f"No se pudo iniciar el pago: {e}"}), 502
-
-    db.execute(
-        "UPDATE orders SET stripe_session_id=? WHERE id=?",
-        (checkout_session.id, order_id),
+    return jsonify(
+        {
+            "order_id": order_id,
+            "total_cents": total,
+            "shipping_cents": shipping,
+            "delivery": delivery,
+            "payment": payment,
+        }
     )
-    db.commit()
-    return jsonify({"url": checkout_session.url, "order_id": order_id})
 
 
 def _finalize_order(order_id):
