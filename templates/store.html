@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>{{ store_name }}</title>
-<meta name="description" content="{{ store_name }} - Tienda de ropa">
-<meta name="theme-color" content="#111827">
+<meta name="description" content="{{ store_name }} - Compra en línea">
+<meta name="theme-color" content="#8e4a55">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,17 +14,61 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <h1 id="store-name">{{ store_name }}</h1>
+<header class="brand-bar">
+  <div class="brand">
+    <h1 id="store-name">{{ store_name }}</h1>
+    <p id="store-tagline" class="tagline"></p>
+  </div>
   <button id="cart-btn" class="cart-btn" aria-label="Ver carrito">🛒 <span id="cart-count">0</span></button>
 </header>
 
+<nav class="info-nav" aria-label="Información de la tienda">
+  <button data-info="info_horarios">Horarios</button>
+  <button data-info="info_ubicacion">Ubicación</button>
+  <button data-info="info_contacto">Contáctenos</button>
+  <button data-info="info_pagos">Pagos</button>
+  <button data-info="info_envios">Envíos</button>
+</nav>
+
 <main>
   <div id="notice" class="notice hidden"></div>
-  <section id="catalog" class="grid" aria-live="polite">
-    <p class="loading">Cargando productos…</p>
+
+  <section class="hero" aria-label="Destacado">
+    <div class="hero-text">
+      <h2 id="hero-title">{{ store_name }}</h2>
+      <p id="hero-sub" class="tagline"></p>
+      <a href="#catalogo" class="btn-hero">COMPRAR AHORA</a>
+    </div>
+  </section>
+
+  <section class="cat-section" aria-label="Categorías">
+    <h2 class="section-title">Categorías</h2>
+    <div id="cat-pills" class="cat-pills"></div>
+  </section>
+
+  <section id="catalogo" aria-label="Productos">
+    <h2 class="section-title" id="catalog-title">Novedades</h2>
+    <div id="catalog" class="grid" aria-live="polite">
+      <p class="loading">Cargando productos…</p>
+    </div>
   </section>
 </main>
+
+<footer class="store-foot">
+  <h3 id="foot-name">{{ store_name }}</h3>
+  <p id="foot-tagline" class="tagline"></p>
+  <p id="foot-envios" class="foot-line"></p>
+</footer>
+
+<div id="info-modal" class="modal hidden" role="dialog" aria-label="Información">
+  <div class="modal-card info-card">
+    <div class="drawer-head">
+      <h2 id="info-title"></h2>
+      <button id="info-close" class="icon-btn" aria-label="Cerrar">✕</button>
+    </div>
+    <p id="info-body" class="info-body"></p>
+  </div>
+</div>
 
 <div id="cart-drawer" class="drawer hidden" role="dialog" aria-label="Carrito">
   <div class="drawer-head">
