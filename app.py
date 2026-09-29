@@ -18,15 +18,20 @@ from flask import (
     send_from_directory, render_template, g,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 
 import stripe
 
+try:
+    import libsql
+    _HAS_LIBSQL = True
+except ImportError:  # pragma: no cover
+    libsql = None
+    _HAS_LIBSQL = False
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "tienda.db")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB por foto
@@ -53,10 +58,116 @@ MAGIC_BYTES = {
 
 
 # ---------------- Base de datos ----------------
+# En Render (plan gratuito) el disco es temporal: cada despliegue borra el
+# archivo SQLite local. Si existen TURSO_URL y TURSO_TOKEN, la app usa Turso
+# (réplica embebida libsql, compatible con SQLite) y los datos sobreviven a
+# los despliegues. Sin esas variables, usa SQLite local como antes.
+
+
+class _Row:
+    """Fila compatible con sqlite3.Row: acceso por índice y por nombre."""
+    __slots__ = ("_cols", "_vals")
+
+    def __init__(self, cols, vals):
+        self._cols = cols
+        self._vals = tuple(vals)
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            key = self._cols.index(key)
+        return self._vals[key]
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+
+class _Cursor:
+    def __init__(self, cur):
+        self._cur = cur
+        self._cols = [d[0] for d in (cur.description or [])]
+
+    def _wrap(self, row):
+        return _Row(self._cols, row) if row is not None else None
+
+    def fetchone(self):
+        return self._wrap(self._cur.fetchone())
+
+    def fetchall(self):
+        return [self._wrap(r) for r in self._cur.fetchall()]
+
+    def __iter__(self):
+        for r in self._cur:
+            yield self._wrap(r)
+
+    @property
+    def lastrowid(self):
+        return self._cur.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+
+class _TursoConn:
+    """Conexión libsql con la misma interfaz que la app espera de sqlite3."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        return _Cursor(self._conn.execute(sql, params))
+
+    def executemany(self, sql, seq):
+        return self._conn.executemany(sql, seq)
+
+    def executescript(self, sql):
+        return self._conn.executescript(sql)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def close(self):
+        return self._conn.close()
+
+    def sync(self):
+        return self._conn.sync()
+
+
+def _turso_enabled():
+    return (
+        _HAS_LIBSQL
+        and bool(os.environ.get("TURSO_URL"))
+        and bool(os.environ.get("TURSO_TOKEN"))
+    )
+
+
+def _connect_db():
+    if _turso_enabled():
+        try:
+            conn = libsql.connect(
+                DB_PATH,
+                sync_url=os.environ["TURSO_URL"],
+                auth_token=os.environ["TURSO_TOKEN"],
+            )
+            wrapped = _TursoConn(conn)
+            try:
+                wrapped.sync()  # traer lo último de la nube
+            except Exception as e:
+                app.logger.warning("Turso sync inicial falló: %s", e)
+            return wrapped
+        except Exception as e:
+            app.logger.warning("No se pudo conectar a Turso, usando SQLite local: %s", e)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = _connect_db()
     return g.db
 
 
@@ -64,11 +175,16 @@ def get_db():
 def close_db(exc=None):
     db = g.pop("db", None)
     if db is not None:
+        try:
+            if isinstance(db, _TursoConn):
+                db.sync()  # subir los cambios a la nube
+        except Exception as e:
+            app.logger.warning("Turso sync final falló: %s", e)
         db.close()
 
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
+    db = _connect_db()
     db.executescript(
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -95,6 +211,12 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS pending_uploads (
+            id TEXT PRIMARY KEY,
+            data BLOB NOT NULL,
+            mime TEXT DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
         """
     )
     # Migración de moneda: la tienda ahora usa lempiras (HNL).
@@ -106,7 +228,17 @@ def init_db():
     cols = [c[1] for c in db.execute("PRAGMA table_info(products)").fetchall()]
     if "category" not in cols:
         db.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT ''")
+    # Migración: fotos persistentes como BLOB (sobreviven a los despliegues).
+    if "photo_blob" not in cols:
+        db.execute("ALTER TABLE products ADD COLUMN photo_blob BLOB")
+    if "photo_mime" not in cols:
+        db.execute("ALTER TABLE products ADD COLUMN photo_mime TEXT DEFAULT ''")
     db.commit()
+    try:
+        if isinstance(db, _TursoConn):
+            db.sync()  # propagar el esquema a la nube
+    except Exception:
+        pass
     db.close()
 
 
@@ -321,11 +453,6 @@ def apple_icon():
     return send_from_directory("static", "apple-touch-icon.png")
 
 
-@app.route("/uploads/<path:filename>")
-def uploads(filename):
-    return send_from_directory(UPLOAD_DIR, filename)
-
-
 # ---------------- Auth API ----------------
 @app.route("/api/setup", methods=["POST"])
 def api_setup():
@@ -458,8 +585,10 @@ def admin_create_product():
             p["stock"], p["photo"], p["active"], p["category"], int(time.time()),
         ),
     )
+    pid = cur.lastrowid
+    _attach_pending_photo(db, pid, (data.get("photo_upload_id") or "").strip())
     db.commit()
-    row = db.execute("SELECT * FROM products WHERE id=?", (cur.lastrowid,)).fetchone()
+    row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
     return jsonify(product_to_dict(row)), 201
 
 
@@ -479,6 +608,12 @@ def admin_update_product(pid):
             p["stock"], p["photo"], p["active"], p["category"], pid,
         ),
     )
+    upload_id = (data.get("photo_upload_id") or "").strip()
+    if upload_id:
+        _attach_pending_photo(db, pid, upload_id)
+    elif not p["photo"]:
+        # Se quitó la foto: borrar el blob guardado
+        db.execute("UPDATE products SET photo_blob=NULL, photo_mime='' WHERE id=?", (pid,))
     db.commit()
     if cur.rowcount == 0:
         return jsonify({"error": "Producto no encontrado."}), 404
@@ -490,24 +625,30 @@ def admin_update_product(pid):
 @login_required
 def admin_delete_product(pid):
     db = get_db()
-    row = db.execute("SELECT photo FROM products WHERE id=?", (pid,)).fetchone()
+    row = db.execute("SELECT id FROM products WHERE id=?", (pid,)).fetchone()
     if not row:
         return jsonify({"error": "Producto no encontrado."}), 404
-    if row["photo"]:
-        _delete_upload_file(row["photo"])
+    # La foto (blob) se borra junto con la fila del producto.
     db.execute("DELETE FROM products WHERE id=?", (pid,))
     db.commit()
     return jsonify({"ok": True})
 
 
-def _delete_upload_file(photo_url):
-    try:
-        name = photo_url.rsplit("/", 1)[-1]
-        path = os.path.join(UPLOAD_DIR, secure_filename(name))
-        if os.path.isfile(path) and os.path.dirname(os.path.abspath(path)) == os.path.abspath(UPLOAD_DIR):
-            os.remove(path)
-    except Exception:
-        pass
+def _attach_pending_photo(db, pid, upload_id):
+    """Mueve la foto subida (pending_uploads) al producto. Devuelve True si la adjuntó."""
+    if not upload_id:
+        return False
+    row = db.execute(
+        "SELECT data, mime FROM pending_uploads WHERE id=?", (upload_id,)
+    ).fetchone()
+    if not row or not row["data"]:
+        return False
+    db.execute(
+        "UPDATE products SET photo_blob=?, photo_mime=?, photo=? WHERE id=?",
+        (bytes(row["data"]), row["mime"] or "image/jpeg", f"/api/photo/{pid}", pid),
+    )
+    db.execute("DELETE FROM pending_uploads WHERE id=?", (upload_id,))
+    return True
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -521,13 +662,52 @@ def api_upload():
     ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
     if ext not in ALLOWED_EXT:
         return jsonify({"error": "Solo se permiten imágenes (PNG, JPG, WEBP, GIF)."}), 400
-    head = f.stream.read(12)
-    f.stream.seek(0)
-    if not _is_image(head):
+    data = f.stream.read()
+    if not _is_image(data[:12]):
         return jsonify({"error": "El archivo no es una imagen válida."}), 400
-    name = f"{uuid.uuid4().hex}.{ext}"
-    f.save(os.path.join(UPLOAD_DIR, name))
-    return jsonify({"url": f"/uploads/{name}"}), 201
+    mime = {
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "webp": "image/webp", "gif": "image/gif",
+    }[ext]
+    uid = uuid.uuid4().hex
+    db = get_db()
+    # Limpieza: borrar subidas pendientes de hace más de 1 día
+    db.execute(
+        "DELETE FROM pending_uploads WHERE created_at < ?",
+        (int(time.time()) - 86400,),
+    )
+    db.execute(
+        "INSERT INTO pending_uploads(id, data, mime, created_at) VALUES(?,?,?,?)",
+        (uid, data, mime, int(time.time())),
+    )
+    db.commit()
+    return jsonify({"url": f"/api/photo/pending/{uid}", "upload_id": uid}), 201
+
+
+@app.route("/api/photo/pending/<uid>")
+def photo_pending(uid):
+    """Sirve una foto recién subida (vista previa antes de guardar el producto)."""
+    db = get_db()
+    row = db.execute(
+        "SELECT data, mime FROM pending_uploads WHERE id=?", (uid,)
+    ).fetchone()
+    if not row or not row["data"]:
+        return jsonify({"error": "No encontrado."}), 404
+    return app.response_class(bytes(row["data"]), mimetype=row["mime"] or "image/jpeg")
+
+
+@app.route("/api/photo/<int:pid>")
+def photo_product(pid):
+    """Sirve la foto guardada de un producto."""
+    db = get_db()
+    row = db.execute(
+        "SELECT photo_blob, photo_mime FROM products WHERE id=?", (pid,)
+    ).fetchone()
+    if not row or not row["photo_blob"]:
+        return jsonify({"error": "No encontrado."}), 404
+    return app.response_class(
+        bytes(row["photo_blob"]), mimetype=row["photo_mime"] or "image/jpeg"
+    )
 
 
 def _is_image(head: bytes) -> bool:

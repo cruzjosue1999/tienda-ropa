@@ -3,3 +3,4 @@ stripe==15.6.1
 waitress==3.0.2
 pillow==12.3.0
 Werkzeug==3.1.9
+libsql==0.1.11
