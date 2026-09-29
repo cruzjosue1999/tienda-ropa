@@ -802,6 +802,50 @@ def admin_mark_order_paid(order_id):
     return jsonify({"ok": True})
 
 
+def _restore_stock(db, order_row):
+    """Devuelve al inventario las unidades de un pedido (al revertir un pago
+    o al eliminar un pedido que ya estaba pagado)."""
+    try:
+        items = json.loads(order_row["items"])
+    except Exception:
+        return
+    for it in items:
+        db.execute(
+            "UPDATE products SET stock = stock + ? WHERE id=?",
+            (it.get("qty", 0), it.get("id")),
+        )
+
+
+@app.route("/api/admin/orders/<int:order_id>/unpaid", methods=["POST"])
+@login_required
+def admin_mark_order_unpaid(order_id):
+    """Revierte un pedido pagado a pendiente y devuelve las unidades al stock."""
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    if row["status"] == "paid":
+        _restore_stock(db, row)
+        db.execute("UPDATE orders SET status='pending' WHERE id=?", (order_id,))
+        db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/orders/<int:order_id>", methods=["DELETE"])
+@login_required
+def admin_delete_order(order_id):
+    """Elimina un pedido. Si ya estaba pagado, devuelve el stock primero."""
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    if row["status"] == "paid":
+        _restore_stock(db, row)
+    db.execute("DELETE FROM orders WHERE id=?", (order_id,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
 # ---------------- API admin: ajustes ----------------
 SETTING_KEYS = ["store_name", "currency", "stripe_secret_key",
                 "stripe_publishable_key", "stripe_webhook_secret",
