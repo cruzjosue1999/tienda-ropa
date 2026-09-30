@@ -21,6 +21,7 @@
 <nav class="tabs">
   <button class="tab active" data-tab="productos">Productos</button>
   <button class="tab" data-tab="pedidos">Pedidos</button>
+  <button class="tab" data-tab="ganancias">💰 Ganancias</button>
   <button class="tab" data-tab="ajustes">Ajustes</button>
 </nav>
 
@@ -34,6 +35,24 @@
 
   <section id="tab-pedidos" class="tab-panel hidden">
     <div id="order-list" class="admin-list"></div>
+  </section>
+
+  <section id="tab-ganancias" class="tab-panel hidden">
+    <div id="profit-cards" class="profit-cards"></div>
+    <p id="profit-warn" class="notice hidden"></p>
+    <div class="profit-charts">
+      <div class="form-card chart-card">
+        <h2>Inversión vs ganancia potencial</h2>
+        <div id="chart-donut" class="chart"></div>
+        <div id="legend-donut" class="legend"></div>
+      </div>
+      <div class="form-card chart-card">
+        <h2>Ganancia potencial por producto</h2>
+        <div id="chart-pie" class="chart"></div>
+        <div id="legend-pie" class="legend"></div>
+      </div>
+    </div>
+    <p class="hint">Las gráficas usan el costo que registres en cada producto (✏️ en la pestaña Productos). Mientras un producto no tenga costo, su ganancia se calcula con costo L0.</p>
   </section>
 
   <section id="tab-ajustes" class="tab-panel hidden">
@@ -92,6 +111,7 @@
       <label>Descripción<textarea id="p-desc" rows="2"></textarea></label>
       <div class="row2">
         <label>Precio *<input type="number" id="p-price" step="0.01" min="0.01" required></label>
+        <label>Costo (L)<input type="number" id="p-cost" step="0.01" min="0" placeholder="0.00"></label>
         <label>Stock<input type="number" id="p-stock" min="0" value="0"></label>
       </div>
       <label>Tallas (separadas por coma, ej: S, M, L; déjalo vacío si no aplica)<input type="text" id="p-sizes" placeholder="S, M, L, XL"></label>
