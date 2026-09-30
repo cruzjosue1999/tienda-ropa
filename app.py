@@ -114,7 +114,9 @@ class _Cursor:
         return [self._wrap(r) for r in self._cur.fetchall()]
 
     def __iter__(self):
-        for r in self._cur:
+        # No iterar el cursor crudo directamente: el Cursor de libsql
+        # (producción) no es iterable, a diferencia del de sqlite3.
+        for r in self._cur.fetchall():
             yield self._wrap(r)
 
     @property
