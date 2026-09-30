@@ -171,17 +171,19 @@
         if (o.status === 'pending') {
           actions = '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button>' +
             '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
-        } else if (o.status === 'paid') {
+        } else if (o.status === 'paid' && !o.auto_paid) {
           actions = '<div class="actions"><button class="btn-small mark-unpaid">↩️ No pagado</button>' +
             '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
-        } else {
+        } else if (o.status !== 'paid') {
           actions = '<div class="actions"><button class="btn-small del-order">🗑️ Eliminar</button></div>';
         }
+        // Si fue pago automático confirmado: sin botones, el pedido está protegido.
+        var statusTxt = (o.status === 'paid' && o.auto_paid) ? '✅ pagado (automático)' : (STATUS_TXT[o.status] || o.status);
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
           '<small>' + items + '</small>' + deliveryTxt +
           (payTxt ? '<small>' + payTxt + '</small>' : '') +
           (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
-          '<small>' + d.toLocaleString('es-US') + ' · ' + (STATUS_TXT[o.status] || o.status) + '</small></div>' +
+          '<small>' + d.toLocaleString('es-US') + ' · ' + statusTxt + '</small></div>' +
           actions;
         (function (id, rowEl) {
           var paidBtn = rowEl.querySelector('.mark-paid');
