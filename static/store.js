@@ -184,11 +184,23 @@
 
   /* ---------- Carrito ---------- */
   function addToCart(id, size, qty) {
+    var p = findProduct(id);
+    var max = p ? p.stock : 99; // no agregar más de lo disponible
     var cart = getCart();
     var line = cart.find(function (l) { return l.id === id && l.size === size; });
-    if (line) line.qty += qty; else cart.push({ id: id, size: size, qty: qty });
-    saveCart(cart);
-    showNotice('Agregado al carrito ✅');
+    var cur = line ? line.qty : 0;
+    var want = cur + (qty || 1);
+    if (want > max) {
+      if (cur < max) {
+        if (line) line.qty = max; else cart.push({ id: id, size: size, qty: max });
+        saveCart(cart);
+      }
+      showNotice(max > 0 ? 'Solo hay ' + max + ' disponible(s) ⚠️' : 'Producto agotado');
+    } else {
+      if (line) line.qty = want; else cart.push({ id: id, size: size, qty: want });
+      saveCart(cart);
+      showNotice('Agregado al carrito ✅');
+    }
     setTimeout(function () { notice.classList.add('hidden'); }, 1500);
   }
 
@@ -251,8 +263,19 @@
 
   function bumpQty(idx, d) {
     var cart = getCart();
-    cart[idx].qty += d;
-    if (cart[idx].qty <= 0) cart.splice(idx, 1);
+    var line = cart[idx];
+    if (!line) return;
+    if (d > 0) {
+      var p = findProduct(line.id);
+      var max = p ? p.stock : 99; // no subir más de lo disponible
+      if (line.qty + d > max) {
+        showNotice('Solo hay ' + max + ' disponible(s) ⚠️');
+        setTimeout(function () { notice.classList.add('hidden'); }, 1500);
+        return;
+      }
+    }
+    line.qty += d;
+    if (line.qty <= 0) cart.splice(idx, 1);
     saveCart(cart);
     renderCart();
   }
