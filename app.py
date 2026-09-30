@@ -6,6 +6,7 @@ Tienda de ropa - sistema completo.
 Toda la interfaz en español, mobile-first.
 """
 import os
+import io
 import json
 import sqlite3
 import secrets
@@ -15,10 +16,11 @@ from functools import wraps
 
 from flask import (
     Flask, request, jsonify, redirect, session,
-    send_from_directory, render_template, g,
+    send_from_directory, render_template, g, Response,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import segno
 import stripe
 
 try:
@@ -685,6 +687,23 @@ def admin_delete_product(pid):
     db.execute("DELETE FROM products WHERE id=?", (pid,))
     db.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/products/<int:pid>/qr")
+@login_required
+def admin_product_qr(pid):
+    """QR del producto para el cliente: al escanearlo abre la página del
+    producto en la tienda (fotos, precio, detalles)."""
+    db = get_db()
+    row = db.execute("SELECT id, name FROM products WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Producto no encontrado."}), 404
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    url = scheme + "://" + request.host + "/#p-" + str(pid)
+    qr = segno.make(url, error="m")
+    buf = io.BytesIO()
+    qr.save(buf, kind="png", scale=10, border=2)
+    return Response(buf.getvalue(), mimetype="image/png")
 
 
 def _attach_pending_photo(db, pid, upload_id):
