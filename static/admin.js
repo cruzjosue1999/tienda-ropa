@@ -101,9 +101,11 @@
       active: document.getElementById('p-active').checked
     };
     try {
-      if (id) await api('/api/admin/products/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      else await api('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      var saved;
+      if (id) saved = await api('/api/admin/products/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      else saved = await api('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       closeModal(); loadProducts(); showNotice('Producto guardado ✅');
+      if (!id && saved && saved.id) openQrModal(saved); // QR creado automáticamente
     } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
   });
 
@@ -122,7 +124,8 @@
           '<small>' + money(p.price_cents) + ' · Stock: ' + p.stock +
           (p.category ? ' · ' + escapeHtml(p.category) : '') +
           ' <span class="badge ' + (p.active ? 'on' : 'off') + '">' + (p.active ? 'visible' : 'oculto') + '</span></small></div>' +
-          '<div class="actions"><button class="btn-small b-edit">✏️</button><button class="btn-small b-stock">📦</button><button class="btn-danger b-del">🗑️</button></div>';
+          '<div class="actions"><button class="btn-small b-qr" title="Código QR para clientes">QR</button><button class="btn-small b-edit">✏️</button><button class="btn-small b-stock">📦</button><button class="btn-danger b-del">🗑️</button></div>';
+        row.querySelector('.b-qr').addEventListener('click', function () { openQrModal(p); });
         row.querySelector('.b-edit').addEventListener('click', function () { openModal(p); });
         row.querySelector('.b-stock').addEventListener('click', async function () {
           var v = prompt('Nuevo stock para "' + p.name + '":', p.stock);
@@ -141,6 +144,53 @@
         list.appendChild(row);
       });
     } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
+  }
+
+  /* QR del producto para el cliente: al escanearlo abre la página del
+     producto en la tienda (fotos, precio, detalles). */
+  var storeName = 'Tu Nuevo Estilo';
+  api('/api/admin/me').then(function (me) { if (me && me.store_name) storeName = me.store_name; }).catch(function () {});
+
+  /* Tarjeta QR estilo canasta: se genera sola con los datos en vivo del
+     producto (precio, tallas, descripción y sitio web; sin el stock).
+     Como los datos se leen al momento, siempre sale actualizada. */
+  function openQrModal(p) {
+    var old = document.getElementById('qr-modal');
+    if (old) old.remove();
+    var sizes = (p.sizes || []).join(' · ');
+    var ov = document.createElement('div');
+    ov.id = 'qr-modal';
+    ov.className = 'modal';
+    ov.innerHTML =
+      '<div class="modal-card basket-card">' +
+        '<div class="drawer-head no-print"><h2>Etiqueta QR</h2>' +
+        '<button class="icon-btn" aria-label="Cerrar">✕</button></div>' +
+        '<div class="basket-head"><span class="basket-ico">🛒</span><span>' + escapeHtml(storeName) + '</span></div>' +
+        '<div class="basket-top">' +
+          (p.photo ? '<img class="basket-photo" src="' + p.photo + '" alt="">' : '') +
+          '<div class="basket-info"><h3>' + escapeHtml(p.name) + '</h3>' +
+          '<div class="price">' + money(p.price_cents) + '</div>' +
+          (sizes ? '<div class="basket-sizes">Tallas: ' + escapeHtml(sizes) + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        (p.description ? '<p class="basket-desc">' + escapeHtml(p.description) + '</p>' : '') +
+        '<div class="basket-qr">' +
+          '<img class="qr-img" src="/api/admin/products/' + p.id + '/qr" alt="QR de ' + escapeHtml(p.name) + '">' +
+          '<p>Escanea para ver más fotos y comprar en línea</p>' +
+        '</div>' +
+        '<div class="basket-web">' + escapeHtml(location.host) + '</div>' +
+        '<div class="basket-actions no-print">' +
+          '<button class="btn-primary" id="qr-print-btn">🖨️ Imprimir etiqueta</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.querySelector('.icon-btn').addEventListener('click', function () { ov.remove(); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    ov.querySelector('#qr-print-btn').addEventListener('click', function () {
+      document.body.classList.add('qr-printing');
+      window.print();
+      setTimeout(function () { document.body.classList.remove('qr-printing'); }, 800);
+    });
   }
 
   /* Pedidos */

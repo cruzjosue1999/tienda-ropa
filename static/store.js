@@ -163,17 +163,23 @@
           '</div>' +
         '</div>';
       if (p.photo) {
-        card.querySelector('.p-photo').addEventListener('click', function () {
+        card.querySelector('.p-photo').addEventListener('click', function (e) {
+          e.stopPropagation();
           openPhotoViewer(p.photo, p.name);
         });
       }
+      card.querySelector('.p-qty').addEventListener('click', function (e) { e.stopPropagation(); });
+      var pSize = card.querySelector('.p-size');
+      if (pSize) pSize.addEventListener('click', function (e) { e.stopPropagation(); });
       if (p.stock > 0) {
-        card.querySelector('.p-add').addEventListener('click', function () {
+        card.querySelector('.p-add').addEventListener('click', function (e) {
+          e.stopPropagation();
           var size = card.querySelector('.p-size');
           var qty = parseInt(card.querySelector('.p-qty').value, 10) || 1;
           addToCart(p.id, size ? size.value : '', qty);
         });
       }
+      card.addEventListener('click', function () { location.hash = '#p-' + p.id; });
       catalog.appendChild(card);
     });
     renderCartBadge();
@@ -189,7 +195,85 @@
     }
     renderPills();
     renderCatalog();
+    openProductFromHash();
   }
+
+  /* ---------- Detalle del producto (vista que abre el QR) ---------- */
+  var pdetail = document.getElementById('pdetail');
+  var pdetailBody = document.getElementById('pdetail-body');
+  var pdetailTitle = document.getElementById('pdetail-title');
+  var pdetailOpenId = null;
+  var suppressHash = false;
+
+  function productIdFromHash() {
+    var m = /^#p-(\d+)$/.exec(location.hash || '');
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function openProduct(id) {
+    var p = findProduct(id);
+    if (!p) { showNotice('Producto no disponible'); return; }
+    pdetailOpenId = p.id;
+    pdetailTitle.textContent = p.name;
+    var photo = p.photo
+      ? '<img class="pdetail-photo" src="' + p.photo + '" alt="' + escapeHtml(p.name) + '">'
+      : '<div class="no-photo">🛍️</div>';
+    var desc = p.description ? '<p class="pdetail-desc">' + escapeHtml(p.description) + '</p>' : '';
+    var sizeOpts = (p.sizes || []).map(function (s) {
+      return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>';
+    }).join('');
+    var sizeSel = sizeOpts ? '<label class="pdetail-row">Talla <select id="pdetail-size">' + sizeOpts + '</select></label>' : '';
+    var stockTxt = p.stock <= 0
+      ? '<span class="stock low">Agotado</span>'
+      : (p.stock <= 3 ? '<span class="stock low">¡Solo quedan ' + p.stock + '!</span>'
+                      : '<span class="stock">' + p.stock + ' disponibles</span>');
+    pdetailBody.innerHTML =
+      photo +
+      '<div class="price">' + money(p.price_cents) + '</div>' +
+      stockTxt + desc + sizeSel +
+      '<div class="add-row">' +
+        '<input type="number" id="pdetail-qty" value="1" min="1" max="' + p.stock + '" aria-label="Cantidad">' +
+        '<button class="btn-primary" id="pdetail-add"' + (p.stock <= 0 ? ' disabled' : '') + '>Agregar al carrito</button>' +
+      '</div>';
+    if (p.photo) {
+      pdetailBody.querySelector('.pdetail-photo').addEventListener('click', function () {
+        openPhotoViewer(p.photo, p.name);
+      });
+    }
+    if (p.stock > 0) {
+      pdetailBody.querySelector('#pdetail-add').addEventListener('click', function () {
+        var size = document.getElementById('pdetail-size');
+        var qty = parseInt(document.getElementById('pdetail-qty').value, 10) || 1;
+        addToCart(p.id, size ? size.value : '', qty);
+        closeProduct();
+      });
+    }
+    pdetail.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeProduct() {
+    if (pdetailOpenId === null) return;
+    pdetailOpenId = null;
+    pdetail.classList.add('hidden');
+    document.body.style.overflow = '';
+    if (productIdFromHash() !== null) {
+      suppressHash = true;
+      history.replaceState(null, '', location.pathname + location.search);
+      suppressHash = false;
+    }
+  }
+
+  function openProductFromHash() {
+    if (!products.length) return;
+    var id = productIdFromHash();
+    if (id !== null && id !== pdetailOpenId) openProduct(id);
+    else if (id === null) closeProduct();
+  }
+
+  document.getElementById('pdetail-close').addEventListener('click', closeProduct);
+  pdetail.addEventListener('click', function (e) { if (e.target === pdetail) closeProduct(); });
+  window.addEventListener('hashchange', function () { if (!suppressHash) openProductFromHash(); });
 
   /* ---------- Visor de foto (pellizcar para acercar, arrastrar para mover) ---------- */
   var pv = { scale: 1, tx: 0, ty: 0, baseW: 0, baseH: 0, pointers: {}, pinchD0: 1, scale0: 1, lastTap: 0, tapTimer: null, moved: 0 };
