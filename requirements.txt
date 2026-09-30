@@ -5,3 +5,4 @@ pillow==12.3.0
 Werkzeug==3.1.9
 libsql==0.1.11
 segno==1.6.6
+pywebpush==2.5.0

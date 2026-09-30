@@ -29,6 +29,14 @@ except ImportError:  # el módulo es opcional: sin él no hay avisos automático
     whatsapp_cloud = None
 
 try:
+    from pywebpush import webpush as _pywebpush_send, WebPushException
+    _HAS_PYWEBPUSH = True
+except ImportError:  # sin pywebpush no hay notificaciones push del admin
+    _pywebpush_send = None
+    WebPushException = None
+    _HAS_PYWEBPUSH = False
+
+try:
     import libsql
     _HAS_LIBSQL = True
 except ImportError:  # pragma: no cover
@@ -254,6 +262,13 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_product_photos_pid
             ON product_photos(product_id);
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
         """
     )
     # Migración de moneda: la tienda ahora usa lempiras (HNL).
@@ -1341,6 +1356,167 @@ def admin_put_settings():
     return jsonify({"ok": True})
 
 
+# ---------------- Notificaciones push del admin (Web Push / VAPID) ----------------
+# Cuando un cliente crea un pedido, el admin recibe una notificación push en
+# su teléfono, como las de otras apps. Requiere las variables de entorno
+# VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY (se configuran en Render; sin ellas
+# el push queda desactivado sin romper nada).
+_PUSH_SYNC = False  # en True ejecuta el envío en el mismo hilo (para tests)
+
+
+def _vapid_configured():
+    return (
+        _HAS_PYWEBPUSH
+        and bool(os.environ.get("VAPID_PUBLIC_KEY"))
+        and bool(os.environ.get("VAPID_PRIVATE_KEY"))
+    )
+
+
+def _push_send_all(title, body, tag="", url="/admin"):
+    """Envía una notificación push a todas las suscripciones del admin.
+
+    Nunca lanza excepciones: si VAPID no está configurado o no hay
+    suscripciones, no hace nada. Las suscripciones muertas (410/404) se
+    eliminan. Abre su propia conexión porque puede correr en un hilo aparte.
+    """
+    if not _vapid_configured():
+        return
+    try:
+        db = _connect_db()
+        subs = db.execute(
+            "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+        ).fetchall()
+        db.close()
+    except Exception:
+        return
+    if not subs:
+        return
+    payload = json.dumps({"title": title, "body": body, "tag": tag, "url": url})
+    priv = os.environ.get("VAPID_PRIVATE_KEY") or ""
+    dead = []
+    for s in subs:
+        try:
+            _pywebpush_send(
+                {
+                    "endpoint": s["endpoint"],
+                    "keys": {"p256dh": s["p256dh"], "auth": s["auth"]},
+                },
+                payload,
+                vapid_private_key=priv,
+                vapid_claims={"sub": "mailto:tienda@tunuevoestilo.hn"},
+                timeout=10,
+            )
+        except Exception as e:
+            resp = getattr(e, "response", None)
+            if getattr(resp, "status_code", None) in (404, 410):
+                dead.append(s["endpoint"])
+    if dead:
+        try:
+            db = _connect_db()
+            for ep in dead:
+                db.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint=?", (ep,)
+                )
+            db.commit()
+            db.close()
+        except Exception:
+            pass
+
+
+def _push_new_order_now(order_id, customer_name, total_cents, payment):
+    """Construye el aviso de nuevo pedido y lo envía (parte síncrona)."""
+    pay_label = {"efectivo": "Efectivo", "deposito": "Depósito"}.get(
+        payment or "", ""
+    )
+    body = "%s · L %s%s" % (
+        customer_name or "Cliente",
+        "{:,.2f}".format((total_cents or 0) / 100),
+        (" · " + pay_label) if pay_label else "",
+    )
+    _push_send_all(
+        "🧾 Nuevo pedido #%d" % order_id, body, tag="pedido-%d" % order_id
+    )
+
+
+def _notify_new_order(order_id, customer_name, total_cents, payment):
+    """Avisa al admin cuando se crea un pedido. Corre en un hilo aparte para
+    no retrasar la respuesta del checkout; los fallos nunca afectan el pedido."""
+    if _PUSH_SYNC:
+        try:
+            _push_new_order_now(order_id, customer_name, total_cents, payment)
+        except Exception:
+            pass
+        return
+
+    import threading
+
+    def _run():
+        try:
+            _push_new_order_now(order_id, customer_name, total_cents, payment)
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@app.route("/api/admin/vapid-public-key")
+@login_required
+def admin_vapid_public_key():
+    """Clave pública VAPID para suscribir el navegador del admin."""
+    return jsonify({"public_key": os.environ.get("VAPID_PUBLIC_KEY") or ""})
+
+
+@app.route("/api/admin/push/subscribe", methods=["POST"])
+@login_required
+def admin_push_subscribe():
+    data = request.get_json(force=True, silent=True) or {}
+    endpoint = (data.get("endpoint") or "").strip()
+    keys = data.get("keys") or {}
+    p256dh = (keys.get("p256dh") or "").strip()
+    auth = (keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth:
+        return jsonify({"error": "Suscripción incompleta."}), 400
+    if len(endpoint) > 2000:
+        return jsonify({"error": "Endpoint demasiado largo."}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO push_subscriptions(endpoint, p256dh, auth, created_at)"
+        " VALUES(?,?,?,?)"
+        " ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh,"
+        " auth=excluded.auth",
+        (endpoint, p256dh, auth, int(time.time())),
+    )
+    db.commit()
+    return jsonify({"ok": True, "vapid_configured": _vapid_configured()})
+
+
+@app.route("/api/admin/push/unsubscribe", methods=["POST"])
+@login_required
+def admin_push_unsubscribe():
+    data = request.get_json(force=True, silent=True) or {}
+    endpoint = (data.get("endpoint") or "").strip()
+    db = get_db()
+    if endpoint:
+        db.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+    else:
+        db.execute("DELETE FROM push_subscriptions")
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/push/status")
+@login_required
+def admin_push_status():
+    db = get_db()
+    row = db.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()
+    return jsonify(
+        {
+            "vapid_configured": _vapid_configured(),
+            "subscriptions": row[0] if row else 0,
+        }
+    )
+
+
 # ---------------- Checkout con Stripe ----------------
 # Estados de cumplimiento del pedido (fulfillment_status).
 # pending:   pendiente de pago / recién creado
@@ -1538,6 +1714,9 @@ def api_checkout():
     )
     order_id = cur.lastrowid
     db.commit()
+    # Avisar al admin con notificación push (en segundo plano; si falla,
+    # el pedido ya quedó creado y no se ve afectado).
+    _notify_new_order(order_id, name, total, payment)
     return jsonify(
         {
             "order_id": order_id,
