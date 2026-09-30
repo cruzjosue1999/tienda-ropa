@@ -15,6 +15,10 @@
   var checkoutBtn = document.getElementById('checkout-btn');
   var checkoutError = document.getElementById('checkout-error');
   var closeBtn = document.getElementById('cart-close');
+  var photoViewer = document.getElementById('photo-viewer');
+  var pvStage = document.getElementById('photo-viewer-stage');
+  var pvImg = document.getElementById('photo-viewer-img');
+  var pvCloseBtn = document.getElementById('photo-viewer-close');
   var infoModal = document.getElementById('info-modal');
   var products = [];
   var infoData = {};
@@ -136,7 +140,7 @@
       var card = document.createElement('article');
       card.className = 'card';
       var photo = p.photo
-        ? '<img src="' + p.photo + '" alt="' + escapeHtml(p.name) + '" loading="lazy">'
+        ? '<img class="p-photo" src="' + p.photo + '" alt="' + escapeHtml(p.name) + '" loading="lazy">'
         : '<div class="no-photo">🛍️</div>';
       var catBadge = p.category ? '<span class="cat-badge">' + escapeHtml(p.category) + '</span>' : '';
       var sizeOpts = (p.sizes || []).map(function (s) {
@@ -158,6 +162,11 @@
             '<button class="btn-primary p-add"' + (p.stock <= 0 ? ' disabled' : '') + '>Agregar</button>' +
           '</div>' +
         '</div>';
+      if (p.photo) {
+        card.querySelector('.p-photo').addEventListener('click', function () {
+          openPhotoViewer(p.photo, p.name);
+        });
+      }
       if (p.stock > 0) {
         card.querySelector('.p-add').addEventListener('click', function () {
           var size = card.querySelector('.p-size');
@@ -181,6 +190,104 @@
     renderPills();
     renderCatalog();
   }
+
+  /* ---------- Visor de foto (pellizcar para acercar, arrastrar para mover) ---------- */
+  var pv = { scale: 1, tx: 0, ty: 0, baseW: 0, baseH: 0, pointers: {}, pinchD0: 1, scale0: 1, lastTap: 0, tapTimer: null, moved: 0 };
+
+  function pvApply() {
+    pvImg.style.transform = 'translate(' + pv.tx + 'px,' + pv.ty + 'px) scale(' + pv.scale + ')';
+  }
+  function pvClamp() {
+    var r = pvStage.getBoundingClientRect();
+    var mx = Math.max(0, (pv.baseW * pv.scale - r.width) / 2);
+    var my = Math.max(0, (pv.baseH * pv.scale - r.height) / 2);
+    pv.tx = Math.max(-mx, Math.min(mx, pv.tx));
+    pv.ty = Math.max(-my, Math.min(my, pv.ty));
+  }
+  function pvZoomAt(ns, mx, my) {
+    ns = Math.max(1, Math.min(5, ns));
+    var r = pvStage.getBoundingClientRect();
+    var scx = r.left + r.width / 2, scy = r.top + r.height / 2;
+    var cx = scx + pv.tx, cy = scy + pv.ty;
+    var k = ns / pv.scale;
+    pv.tx = mx - k * (mx - cx) - scx;
+    pv.ty = my - k * (my - cy) - scy;
+    pv.scale = ns;
+    pvClamp();
+    pvApply();
+  }
+  function pvMeasure() {
+    pv.baseW = pvImg.clientWidth;
+    pv.baseH = pvImg.clientHeight;
+  }
+  function openPhotoViewer(src, name) {
+    pvImg.src = src;
+    pvImg.alt = name ? 'Foto de ' + name : 'Foto del producto';
+    pv.scale = 1; pv.tx = 0; pv.ty = 0;
+    pvImg.style.transform = '';
+    photoViewer.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    if (pvImg.complete && pvImg.naturalWidth) pvMeasure();
+    else pvImg.onload = pvMeasure;
+  }
+  function closePhotoViewer() {
+    if (pv.tapTimer) { clearTimeout(pv.tapTimer); pv.tapTimer = null; }
+    photoViewer.classList.add('hidden');
+    document.body.style.overflow = '';
+    pvImg.src = '';
+    pv.pointers = {};
+  }
+  pvCloseBtn.addEventListener('click', closePhotoViewer);
+  pvStage.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    try { pvStage.setPointerCapture(e.pointerId); } catch (err) {}
+    pv.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    pv.moved = 0;
+    var ids = Object.keys(pv.pointers);
+    if (ids.length === 2) {
+      var a = pv.pointers[ids[0]], b = pv.pointers[ids[1]];
+      pv.pinchD0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      pv.scale0 = pv.scale;
+    }
+  });
+  pvStage.addEventListener('pointermove', function (e) {
+    var prev = pv.pointers[e.pointerId];
+    if (!prev) return;
+    var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+    pv.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    pv.moved += Math.abs(dx) + Math.abs(dy);
+    var ids = Object.keys(pv.pointers);
+    if (ids.length === 2) {
+      var a = pv.pointers[ids[0]], b = pv.pointers[ids[1]];
+      var d = Math.hypot(a.x - b.x, a.y - b.y);
+      pvZoomAt(pv.scale0 * d / pv.pinchD0, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    } else if (ids.length === 1 && pv.scale > 1) {
+      pv.tx += dx; pv.ty += dy;
+      pvClamp();
+      pvApply();
+    }
+  });
+  function pvPointerEnd(e) {
+    var wasTap = pv.moved < 12;
+    delete pv.pointers[e.pointerId];
+    if (!wasTap || Object.keys(pv.pointers).length > 0) return;
+    var now = Date.now();
+    if (now - pv.lastTap < 300) {
+      pv.lastTap = 0;
+      if (pv.tapTimer) { clearTimeout(pv.tapTimer); pv.tapTimer = null; }
+      pvZoomAt(pv.scale > 1.2 ? 1 : 2.5, e.clientX, e.clientY);
+    } else {
+      pv.lastTap = now;
+      var hit = document.elementFromPoint(e.clientX, e.clientY);
+      if (hit !== pvImg) pv.tapTimer = setTimeout(closePhotoViewer, 320);
+    }
+  }
+  pvStage.addEventListener('pointerup', pvPointerEnd);
+  pvStage.addEventListener('pointercancel', function (e) { delete pv.pointers[e.pointerId]; });
+  pvStage.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    pvZoomAt(pv.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+  }, { passive: false });
 
   /* ---------- Carrito ---------- */
   function addToCart(id, size, qty) {
