@@ -1116,12 +1116,37 @@ def _is_image(head: bytes) -> bool:
 def admin_list_orders():
     db = get_db()
     rows = db.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 200").fetchall()
-    out = []
+    # Ítems parseados + mapa de productos con foto de portada (miniaturas).
+    parsed = []
+    pids = set()
     for r in rows:
+        try:
+            items = json.loads(r["items"])
+        except Exception:
+            items = []
+        parsed.append(items)
+        for it in items:
+            pid = it.get("id")
+            if isinstance(pid, int):
+                pids.add(pid)
+    with_photo = set()
+    if pids:
+        q = ",".join("?" for _ in pids)
+        for pr in db.execute(
+            f"SELECT id FROM products WHERE id IN ({q}) "
+            "AND photo_blob IS NOT NULL AND photo_blob != ''",
+            list(pids),
+        ):
+            with_photo.add(pr["id"])
+    out = []
+    for r, items in zip(rows, parsed):
+        for it in items:
+            pid = it.get("id")
+            it["photo_url"] = f"/api/photo/{pid}" if pid in with_photo else None
         out.append(
             {
                 "id": r["id"],
-                "items": json.loads(r["items"]),
+                "items": items,
                 "total_cents": r["total_cents"],
                 "status": r["status"],
                 "created_at": r["created_at"],
