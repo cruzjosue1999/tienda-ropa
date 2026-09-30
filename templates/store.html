@@ -132,9 +132,7 @@
       </div>
       <div class="form-row">
         <input id="cust-phone" type="tel" placeholder="Celular (8 dígitos) *" autocomplete="tel" inputmode="tel" maxlength="16">
-        <input id="cust-idnum" type="text" placeholder="N.º de identidad *" inputmode="numeric" maxlength="18">
       </div>
-      <p class="hint" id="idnum-hint">La identidad se pide solo para envío a domicilio (la compañía de cargo la exige).</p>
       <label class="check wa-optin"><input type="checkbox" id="cust-wa-optin"> Quiero recibir notificaciones de mi pedido por WhatsApp</label>
       <div class="delivery-methods" role="radiogroup" aria-label="Método de entrega">
         <label class="delivery-opt"><input type="radio" name="delivery" value="domicilio" checked>
@@ -147,6 +145,10 @@
             <small>✔️ Gratis · Pago contra entrega</small>
           </span>
         </label>
+      </div>
+      <div id="home-delivery-notice" class="notice-box">
+        <p>📋 Al momento de la entrega deberás mostrar tu identificación al repartidor para confirmar que el pedido es tuyo. Si no estarás presente, puedes autorizar a otra persona para recibirlo:</p>
+        <input id="cust-authorized" type="text" placeholder="Persona autorizada a recibir (opcional)" maxlength="120">
       </div>
       <h3>💳 Forma de pago</h3>
       <div class="delivery-methods" role="radiogroup" aria-label="Forma de pago">
