@@ -97,11 +97,14 @@
       <label>Tallas (separadas por coma, ej: S, M, L; déjalo vacío si no aplica)<input type="text" id="p-sizes" placeholder="S, M, L, XL"></label>
       <label>Categoría (ej: Ropa, Zapatos, Vitaminas)<input type="text" id="p-category" placeholder="Ropa"></label>
       <label>SKU / código<input type="text" id="p-sku"></label>
-      <label>Foto
-        <input type="file" id="p-photo-file" accept="image/*">
+      <div class="photos-block">
+        <span class="fld-label">Fotos</span>
+        <div id="p-photos-grid" class="photos-grid"></div>
+        <input type="file" id="p-photos-file" accept="image/*" multiple class="hidden">
         <input type="hidden" id="p-photo">
-        <img id="p-photo-preview" class="preview hidden" alt="Vista previa">
-      </label>
+        <button type="button" id="p-photos-add" class="btn-secondary">＋ Agregar fotos</button>
+        <p class="hint">Puedes agregar varias fotos. La primera es la portada. Toca ⭐ en una foto para hacerla portada.</p>
+      </div>
       <label class="check"><input type="checkbox" id="p-active" checked> Visible en la tienda</label>
       <button type="submit" class="btn-primary">Guardar producto</button>
       <p id="product-error" class="error hidden"></p>
