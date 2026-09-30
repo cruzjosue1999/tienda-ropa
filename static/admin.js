@@ -36,7 +36,7 @@
       document.getElementById('tab-' + t.dataset.tab).classList.remove('hidden');
       if (t.dataset.tab === 'pedidos') loadOrders();
       if (t.dataset.tab === 'ganancias') loadProfit();
-      if (t.dataset.tab === 'ajustes') loadSettings();
+      if (t.dataset.tab === 'ajustes') { loadSettings(); refreshPushUI(); }
     });
   });
 
@@ -616,5 +616,71 @@
     } catch (err) { showNotice(err.message, true); }
   });
 
+  /* Notificaciones push de nuevos pedidos */
+  function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var raw = window.atob(base64);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function pushSupported() {
+    return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+  }
+  async function refreshPushUI() {
+    var stEl = document.getElementById('push-status');
+    var onBtn = document.getElementById('push-enable');
+    var offBtn = document.getElementById('push-disable');
+    if (!pushSupported()) {
+      stEl.textContent = 'Estado: este navegador no soporta notificaciones push.';
+      return;
+    }
+    try {
+      var st = await api('/api/admin/push/status');
+      var reg = await navigator.serviceWorker.getRegistration('/admin/');
+      var sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub && st.subscriptions > 0) {
+        stEl.textContent = 'Estado: activadas en este teléfono ✅';
+        onBtn.classList.add('hidden'); offBtn.classList.remove('hidden');
+      } else {
+        stEl.textContent = st.vapid_configured
+          ? 'Estado: desactivadas en este teléfono.'
+          : 'Estado: faltan las claves VAPID en el servidor (avísame para configurarlas).';
+        onBtn.classList.remove('hidden'); offBtn.classList.add('hidden');
+      }
+    } catch (err) { if (err.message !== 'auth') stEl.textContent = 'Estado: no se pudo revisar.'; }
+  }
+  document.getElementById('push-enable').addEventListener('click', async function () {
+    if (!pushSupported()) { showNotice('Este navegador no soporta notificaciones push.', true); return; }
+    try {
+      var perm = await Notification.requestPermission();
+      if (perm !== 'granted') { showNotice('Permiso de notificaciones denegado.', true); return; }
+      var st = await api('/api/admin/push/status');
+      if (!st.vapid_configured) { showNotice('Faltan las claves VAPID en el servidor. Avísame para configurarlas.', true); return; }
+      var k = await api('/api/admin/vapid-public-key');
+      if (!k.public_key) { showNotice('Faltan las claves VAPID en el servidor.', true); return; }
+      var reg = await navigator.serviceWorker.getRegistration('/admin/') || await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(k.public_key)
+      });
+      var sj = sub.toJSON();
+      await api('/api/admin/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint, keys: sj.keys }) });
+      showNotice('Notificaciones activadas 🔔'); refreshPushUI();
+    } catch (err) { showNotice(err.message, true); }
+  });
+  document.getElementById('push-disable').addEventListener('click', async function () {
+    try {
+      var reg = await navigator.serviceWorker.getRegistration('/admin/');
+      var sub = reg ? await reg.pushManager.getSubscription() : null;
+      var endpoint = sub ? sub.endpoint : '';
+      if (sub) { try { await sub.unsubscribe(); } catch (e) {} }
+      await api('/api/admin/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: endpoint }) });
+      showNotice('Notificaciones desactivadas.'); refreshPushUI();
+    } catch (err) { showNotice(err.message, true); }
+  });
   loadProducts();
 })();

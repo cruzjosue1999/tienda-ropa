@@ -1,5 +1,5 @@
 /* Service Worker - app de administración */
-var CACHE = 'tienda-admin-v13';
+var CACHE = 'tienda-admin-v14';
 var ASSETS = ['/admin', '/static/style.css', '/static/admin.js', '/admin/manifest.json'];
 
 self.addEventListener('install', function (e) {
@@ -38,6 +38,38 @@ self.addEventListener('fetch', function (e) {
         }
         return res;
       }).catch(function () { return hit; });
+    })
+  );
+});
+
+/* Notificaciones push: avisos de nuevos pedidos */
+self.addEventListener('push', function (e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) {}
+  var title = data.title || 'Tu Nuevo Estilo Admin';
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: '/static/icon-admin-192.png',
+      badge: '/static/icon-admin-192.png',
+      tag: data.tag || 'pedido',
+      renotify: true,
+      data: { url: data.url || '/admin' }
+    })
+  );
+});
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  var url = (e.notification.data && e.notification.data.url) || '/admin';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].url.indexOf('/admin') !== -1) {
+          list[i].navigate(url + '#pedidos');
+          return list[i].focus();
+        }
+      }
+      return self.clients.openWindow(url + '#pedidos');
     })
   );
 });
