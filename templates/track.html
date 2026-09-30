@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Rastrear mi pedido · {{ store_name }}</title>
+<meta name="theme-color" content="#0a2a5e">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="brand-bar">
+  <div class="brand">
+    <img src="/static/logo.webp" alt="Tu Nuevo Estilo" class="brand-logo">
+    <div>
+      <h1>{{ store_name }}</h1>
+      <p class="tagline">Rastrear mi pedido</p>
+    </div>
+  </div>
+  <a href="/" class="cart-btn" aria-label="Volver a la tienda">🏠</a>
+</header>
+
+<main class="track-page">
+  <section class="track-card">
+    <h2>📍 ¿Dónde va mi pedido?</h2>
+    <p class="hint">Escribe tu número de pedido y el celular con el que compraste.</p>
+    <div class="form-row">
+      <input id="trk-order" type="number" min="1" placeholder="N.º de pedido (ej: 12)" inputmode="numeric">
+      <input id="trk-phone" type="tel" placeholder="Tu celular" inputmode="tel" maxlength="16">
+    </div>
+    <button id="trk-btn" class="btn-primary">Rastrear 🔍</button>
+    <p id="trk-error" class="error hidden"></p>
+  </section>
+
+  <section id="trk-result" class="track-card hidden">
+    <h2>Pedido <span id="trk-num"></span></h2>
+    <p id="trk-date" class="hint"></p>
+    <ol id="trk-steps" class="timeline"></ol>
+    <p id="trk-guide" class="guide hidden"></p>
+    <p id="trk-note" class="hint"></p>
+  </section>
+</main>
+
+<footer class="store-foot">
+  <p><a href="/" class="foot-link">← Volver a la tienda</a></p>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var STEPS = ['Confirmado', 'En empaquetamiento', 'Listo para envío', 'Enviado', 'Entregado'];
+
+  function stepIndex(d) {
+    if (d.fulfillment_status === 'cancelled') return -2;
+    if (d.payment_status !== 'paid') return -1; // pendiente de pago
+    return { pending: 0, packing: 1, ready: 2, shipped: 3, delivered: 4 }[d.fulfillment_status] ?? 0;
+  }
+
+  function render(d) {
+    document.getElementById('trk-num').textContent = '#' + d.id;
+    var dt = new Date(d.created_at * 1000);
+    document.getElementById('trk-date').textContent = 'Pedido del ' + dt.toLocaleDateString('es-HN');
+    var idx = stepIndex(d);
+    var ol = document.getElementById('trk-steps');
+    ol.innerHTML = '';
+    if (idx === -2) {
+      ol.innerHTML = '<li class="step cancelled">❌ Este pedido fue cancelado.</li>';
+    } else if (idx === -1) {
+      ol.innerHTML = '<li class="step active">⏳ Pendiente de pago: tu pedido se confirma cuando recibamos tu pago.</li>';
+    } else {
+      STEPS.forEach(function (label, i) {
+        var li = document.createElement('li');
+        li.className = 'step' + (i < idx ? ' done' : '') + (i === idx ? ' active' : '');
+        li.textContent = (i < idx ? '✅ ' : i === idx ? '📍 ' : '') + label;
+        ol.appendChild(li);
+      });
+    }
+    var g = document.getElementById('trk-guide');
+    if (d.tracking_number) {
+      g.textContent = '📦 Número de guía: ' + d.tracking_number;
+      g.classList.remove('hidden');
+    } else { g.classList.add('hidden'); }
+    var note = document.getElementById('trk-note');
+    note.textContent = idx === 4
+      ? '¡Disfruta tu compra! Gracias por preferirnos 🙌'
+      : 'Te avisaremos por WhatsApp cuando haya novedades de tu pedido.';
+    document.getElementById('trk-result').classList.remove('hidden');
+  }
+
+  document.getElementById('trk-btn').addEventListener('click', async function () {
+    var err = document.getElementById('trk-error');
+    err.classList.add('hidden');
+    document.getElementById('trk-result').classList.add('hidden');
+    var order = document.getElementById('trk-order').value.trim();
+    var phone = document.getElementById('trk-phone').value.trim();
+    if (!order || !phone) {
+      err.textContent = 'Escribe tu número de pedido y tu celular.';
+      err.classList.remove('hidden');
+      return;
+    }
+    try {
+      var r = await fetch('/api/track?order=' + encodeURIComponent(order) +
+                          '&phone=' + encodeURIComponent(phone));
+      if (!r.ok) throw new Error('No encontramos ese pedido. Revisa el número y el celular.');
+      render(await r.json());
+    } catch (e) {
+      err.textContent = e.message;
+      err.classList.remove('hidden');
+    }
+  });
+})();
+</script>
+</body>
+</html>

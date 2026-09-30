@@ -31,6 +31,7 @@
   <button data-info="info_contacto">Contáctenos</button>
   <button data-info="info_pagos">Pagos</button>
   <button data-info="info_envios">Envíos</button>
+  <a href="/rastrear" class="track-link">📍 Rastrear pedido</a>
 </nav>
 
 <main>
@@ -61,6 +62,7 @@
   <h3 id="foot-name">{{ store_name }}</h3>
   <p id="foot-tagline" class="tagline"></p>
   <p id="foot-envios" class="foot-line"></p>
+  <p><a href="/rastrear" class="foot-link">📍 Rastrear mi pedido</a></p>
 </footer>
 
 <div id="info-modal" class="modal hidden" role="dialog" aria-label="Información">
@@ -128,6 +130,12 @@
           <option>Yoro</option>
         </select>
       </div>
+      <div class="form-row">
+        <input id="cust-phone" type="tel" placeholder="Celular (8 dígitos) *" autocomplete="tel" inputmode="tel" maxlength="16">
+        <input id="cust-idnum" type="text" placeholder="N.º de identidad *" inputmode="numeric" maxlength="18">
+      </div>
+      <p class="hint" id="idnum-hint">La identidad se pide solo para envío a domicilio (la compañía de cargo la exige).</p>
+      <label class="check wa-optin"><input type="checkbox" id="cust-wa-optin"> Quiero recibir notificaciones de mi pedido por WhatsApp</label>
       <div class="delivery-methods" role="radiogroup" aria-label="Método de entrega">
         <label class="delivery-opt"><input type="radio" name="delivery" value="domicilio" checked>
           <span>🏠 Envío a domicilio
@@ -165,6 +173,7 @@
       <p id="order-success-num"></p>
       <p id="order-success-detail"></p>
       <p id="order-success-pay" class="pay-note"></p>
+      <p class="track-save">🔖 Guarda tu número de pedido.<br><a href="/rastrear">📍 Rastrear mi pedido</a></p>
       <button id="order-success-close" class="btn-primary">Seguir comprando</button>
     </div>
   </div>
