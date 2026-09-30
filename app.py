@@ -275,6 +275,11 @@ def init_db():
     cols = [c[1] for c in db.execute("PRAGMA table_info(products)").fetchall()]
     if "category" not in cols:
         db.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT ''")
+    # Migración (2026-09-30): costo del producto en lempiras, para las
+    # gráficas de ganancias del admin. Queda en 0 hasta que el dueño lo
+    # ingrese editando cada producto; eso es esperado, no inventar costos.
+    if "cost" not in cols:
+        db.execute("ALTER TABLE products ADD COLUMN cost REAL DEFAULT 0")
     # Migración: marca qué pedidos fueron confirmados por pago automático
     # (tarjeta/cuenta vía pasarela). Esos no se pueden borrar ni revertir.
     ocols_auto = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
@@ -384,11 +389,13 @@ def _photo_state(db, pid):
     }
 
 
-def product_to_dict(row, gallery=None):
+def product_to_dict(row, gallery=None, include_cost=False):
+    """Convierte una fila de producto a dict. El costo solo se incluye cuando
+    lo pide el admin (include_cost=True); el endpoint público nunca lo expone."""
     photo = row["photo"] or ""
     items = gallery or []
     photos = ([photo] if photo else []) + [it["url"] for it in items]
-    return {
+    d = {
         "id": row["id"],
         "name": row["name"],
         "description": row["description"] or "",
@@ -403,6 +410,21 @@ def product_to_dict(row, gallery=None):
         "category": row["category"] or "",
         "created_at": row["created_at"],
     }
+    if include_cost:
+        d["cost_cents"] = _pcol_cost(row)
+    return d
+
+
+def _pcol_cost(row):
+    """Costo del producto en centavos, tolerando BDs viejas sin la columna."""
+    try:
+        v = row["cost"]
+    except (KeyError, ValueError, IndexError):
+        return 0
+    try:
+        return int(round(float(v or 0) * 100))
+    except (TypeError, ValueError):
+        return 0
 
 
 def admin_password_set():
@@ -709,7 +731,7 @@ def admin_list_products():
     db = get_db()
     rows = db.execute("SELECT * FROM products ORDER BY created_at DESC").fetchall()
     gmap = _gallery_map(db, [r["id"] for r in rows])
-    return jsonify([product_to_dict(r, gmap[r["id"]]) for r in rows])
+    return jsonify([product_to_dict(r, gmap[r["id"]], include_cost=True) for r in rows])
 
 
 def parse_product_input(data):
@@ -724,10 +746,24 @@ def parse_product_input(data):
         stock = int(data.get("stock", 0))
     except (TypeError, ValueError):
         stock = 0
+    # El costo llega en lempiras ("cost"); también se acepta "cost_cents"
+    # para llamadas internas que ya lo traen calculado (ej: edición rápida).
+    cost_cents = 0
+    if "cost" in data:
+        try:
+            cost_cents = int(round(float(data.get("cost") or 0) * 100))
+        except (TypeError, ValueError):
+            cost_cents = 0
+    elif "cost_cents" in data:
+        try:
+            cost_cents = int(data.get("cost_cents") or 0)
+        except (TypeError, ValueError):
+            cost_cents = 0
     return {
         "name": (data.get("name") or "").strip(),
         "description": (data.get("description") or "").strip(),
         "price_cents": max(0, price_cents),
+        "cost_cents": max(0, cost_cents),
         "sizes": json.dumps(sizes),
         "sku": (data.get("sku") or "").strip(),
         "stock": max(0, stock),
@@ -748,10 +784,11 @@ def admin_create_product():
         return jsonify({"error": "El precio debe ser mayor a cero."}), 400
     db = get_db()
     cur = db.execute(
-        """INSERT INTO products(name, description, price_cents, sizes, sku, stock, photo, active, category, created_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        """INSERT INTO products(name, description, price_cents, cost, sizes, sku, stock, photo, active, category, created_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
         (
-            p["name"], p["description"], p["price_cents"], p["sizes"], p["sku"],
+            p["name"], p["description"], p["price_cents"], p["cost_cents"] / 100.0,
+            p["sizes"], p["sku"],
             p["stock"], p["photo"], p["active"], p["category"], int(time.time()),
         ),
     )
@@ -770,7 +807,7 @@ def admin_create_product():
             _add_gallery_photo(db, pid, uid)
     db.commit()
     row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return jsonify(product_to_dict(row, _gallery_items(db, pid))), 201
+    return jsonify(product_to_dict(row, _gallery_items(db, pid), include_cost=True)), 201
 
 
 @app.route("/api/admin/products/<int:pid>", methods=["PUT"])
@@ -782,10 +819,11 @@ def admin_update_product(pid):
         return jsonify({"error": "El producto necesita un nombre."}), 400
     db = get_db()
     cur = db.execute(
-        """UPDATE products SET name=?, description=?, price_cents=?, sizes=?, sku=?,
+        """UPDATE products SET name=?, description=?, price_cents=?, cost=?, sizes=?, sku=?,
            stock=?, photo=?, active=?, category=? WHERE id=?""",
         (
-            p["name"], p["description"], p["price_cents"], p["sizes"], p["sku"],
+            p["name"], p["description"], p["price_cents"], p["cost_cents"] / 100.0,
+            p["sizes"], p["sku"],
             p["stock"], p["photo"], p["active"], p["category"], pid,
         ),
     )
@@ -799,7 +837,7 @@ def admin_update_product(pid):
     if cur.rowcount == 0:
         return jsonify({"error": "Producto no encontrado."}), 404
     row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return jsonify(product_to_dict(row, _gallery_items(db, pid)))
+    return jsonify(product_to_dict(row, _gallery_items(db, pid), include_cost=True))
 
 
 @app.route("/api/admin/products/<int:pid>", methods=["DELETE"])
@@ -831,6 +869,62 @@ def admin_product_qr(pid):
     buf = io.BytesIO()
     qr.save(buf, kind="png", scale=10, border=2)
     return Response(buf.getvalue(), mimetype="image/png")
+
+
+@app.route("/api/admin/stats/profit")
+@login_required
+def admin_profit_stats():
+    """Estadísticas de ganancias del inventario para las gráficas del admin.
+
+    Devuelve los totales (inversión, valor a precio de venta, ganancia
+    potencial y margen promedio) y la ganancia por producto, calculados sobre
+    los productos que tienen stock. Los productos sin costo registrado se
+    cuentan aparte para avisar en el panel.
+    """
+    db = get_db()
+    rows = db.execute("SELECT * FROM products").fetchall()
+    items = []
+    investment = 0
+    sale_value = 0
+    profit = 0
+    sin_costo = 0
+    for r in rows:
+        stock = r["stock"] or 0
+        if stock <= 0:
+            continue
+        price = r["price_cents"] or 0
+        cost = _pcol_cost(r)
+        if cost <= 0:
+            sin_costo += 1
+        unit_profit = price - cost
+        total_profit = unit_profit * stock
+        investment += cost * stock
+        sale_value += price * stock
+        profit += total_profit
+        items.append(
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "price_cents": price,
+                "cost_cents": cost,
+                "stock": stock,
+                "unit_profit_cents": unit_profit,
+                "total_profit_cents": total_profit,
+            }
+        )
+    items.sort(key=lambda x: x["total_profit_cents"], reverse=True)
+    avg_margin = round(profit / sale_value * 100, 1) if sale_value > 0 else 0.0
+    return jsonify(
+        {
+            "investment_cents": investment,
+            "sale_value_cents": sale_value,
+            "potential_profit_cents": profit,
+            "avg_margin_pct": avg_margin,
+            "products_with_stock": len(items),
+            "products_without_cost": sin_costo,
+            "by_product": items,
+        }
+    )
 
 
 def _attach_pending_photo(db, pid, upload_id):
