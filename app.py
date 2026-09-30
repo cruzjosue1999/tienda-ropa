@@ -24,6 +24,11 @@ import segno
 import stripe
 
 try:
+    import whatsapp_cloud
+except ImportError:  # el módulo es opcional: sin él no hay avisos automáticos
+    whatsapp_cloud = None
+
+try:
     import libsql
     _HAS_LIBSQL = True
 except ImportError:  # pragma: no cover
@@ -298,6 +303,22 @@ def init_db():
     # Migración: forma de pago elegida por el cliente (efectivo / deposito).
     if "payment_method" not in ocols:
         db.execute("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT ''")
+    # Migración fase 1 (2026-09-30): teléfono, identificación, opt-in de
+    # WhatsApp, estado de cumplimiento del pedido y número de guía.
+    if "customer_phone" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN customer_phone TEXT DEFAULT ''")
+    if "customer_id_number" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN customer_id_number TEXT DEFAULT ''")
+    if "whatsapp_optin" not in ocols:
+        db.execute(
+            "ALTER TABLE orders ADD COLUMN whatsapp_optin INTEGER NOT NULL DEFAULT 0"
+        )
+    if "fulfillment_status" not in ocols:
+        db.execute(
+            "ALTER TABLE orders ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'pending'"
+        )
+    if "tracking_number" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN tracking_number TEXT DEFAULT ''")
     db.commit()
     try:
         if isinstance(db, _TursoConn):
@@ -621,6 +642,43 @@ def api_products():
     ).fetchall()
     gmap = _gallery_map(db, [r["id"] for r in rows])
     return jsonify([product_to_dict(r, gmap[r["id"]]) for r in rows])
+
+
+@app.route("/rastrear")
+def track_page():
+    return render_template(
+        "track.html",
+        store_name=get_setting("store_name", "Tu Nuevo Estilo"),
+    )
+
+
+@app.route("/api/track")
+def api_track():
+    """El cliente rastrea su pedido con el número de orden + su celular.
+
+    Privacidad: solo devuelve datos si el teléfono coincide con el del pedido;
+    en cualquier otro caso responde 404 (igual que si no existiera).
+    """
+    try:
+        order_id = int(request.args.get("order", ""))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    phone = norm_phone(request.args.get("phone", ""))
+    if not phone:
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row or norm_phone(_order_col(row, "customer_phone", "")) != phone:
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    return jsonify(
+        {
+            "id": row["id"],
+            "payment_status": row["status"],
+            "fulfillment_status": _order_col(row, "fulfillment_status", "pending") or "pending",
+            "tracking_number": _order_col(row, "tracking_number", ""),
+            "created_at": row["created_at"],
+        }
+    )
 
 
 @app.route("/api/order-status")
@@ -977,6 +1035,11 @@ def admin_list_orders():
                 "payment_method": r["payment_method"] or "",
                 "shipping_cents": r["shipping_cents"] if r["shipping_cents"] else 0,
                 "auto_paid": bool(r["auto_paid"]),
+                "customer_phone": _order_col(r, "customer_phone", ""),
+                "customer_id_number": _order_col(r, "customer_id_number", ""),
+                "whatsapp_optin": bool(_order_col(r, "whatsapp_optin", 0)),
+                "fulfillment_status": _order_col(r, "fulfillment_status", "pending") or "pending",
+                "tracking_number": _order_col(r, "tracking_number", ""),
             }
         )
     return jsonify(out)
@@ -1018,9 +1081,42 @@ def admin_mark_order_unpaid(order_id):
         if row["auto_paid"]:
             return jsonify({"error": "No se puede revertir: el pago fue confirmado automáticamente."}), 403
         _restore_stock(db, row)
-        db.execute("UPDATE orders SET status='pending' WHERE id=?", (order_id,))
+        db.execute(
+            "UPDATE orders SET status='pending', fulfillment_status='pending' WHERE id=?",
+            (order_id,),
+        )
         db.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/orders/<int:order_id>/status", methods=["POST"])
+@login_required
+def admin_order_fulfillment_status(order_id):
+    """Cambia el estado de cumplimiento del pedido (empaquetamiento, listo,
+    enviado, entregado, cancelado) y opcionalmente guarda el número de guía.
+    Al pasar a 'ready' se envía el aviso de WhatsApp si el cliente aceptó."""
+    data = request.get_json(force=True, silent=True) or {}
+    status = (data.get("status") or "").strip()
+    if status not in FULFILLMENT_STATES:
+        return jsonify({"error": "Estado no válido."}), 400
+    db = get_db()
+    row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Pedido no encontrado."}), 404
+    tracking = data.get("tracking_number")
+    if tracking is None:
+        tracking = _order_col(row, "tracking_number", "")
+    else:
+        tracking = str(tracking).strip()
+    db.execute(
+        "UPDATE orders SET fulfillment_status=?, tracking_number=? WHERE id=?",
+        (status, tracking, order_id),
+    )
+    db.commit()
+    if status == "ready":
+        _maybe_send_whatsapp(db, row, "listo", tracking)
+    return jsonify({"ok": True, "fulfillment_status": status,
+                    "tracking_number": tracking})
 
 
 @app.route("/api/admin/orders/<int:order_id>", methods=["DELETE"])
@@ -1108,6 +1204,67 @@ def admin_put_settings():
 
 
 # ---------------- Checkout con Stripe ----------------
+# Estados de cumplimiento del pedido (fulfillment_status).
+# pending:   pendiente de pago / recién creado
+# packing:   pago confirmado, en proceso de empaquetamiento
+# ready:     paquete envuelto y listo para que lo recoja la compañía de envíos
+# shipped:   enviado (en camino)
+# delivered: entregado
+# cancelled: cancelado
+FULFILLMENT_STATES = {
+    "pending": "Pendiente de pago",
+    "packing": "En empaquetamiento",
+    "ready": "Listo para envío",
+    "shipped": "Enviado",
+    "delivered": "Entregado",
+    "cancelled": "Cancelado",
+}
+
+
+def norm_phone(raw):
+    """Solo dígitos; quita el prefijo 504/+504 si viene con él."""
+    digits = "".join(c for c in str(raw or "") if c.isdigit())
+    if len(digits) == 11 and digits.startswith("504"):
+        digits = digits[3:]
+    return digits
+
+
+def valid_phone(raw):
+    """Celular hondureño: 8 dígitos (permite +504/504, guiones, espacios)."""
+    return len(norm_phone(raw)) == 8
+
+
+def valid_id_number(raw):
+    """Número de identidad hondureño: 13 dígitos (permite guiones)."""
+    return len("".join(c for c in str(raw or "") if c.isdigit())) == 13
+
+
+def _order_col(row, name, default=""):
+    """Lee una columna de orders tolerando BDs viejas sin la columna."""
+    try:
+        v = row[name]
+    except (KeyError, ValueError, IndexError):
+        return default
+    return default if v is None else v
+
+
+def _maybe_send_whatsapp(db, order_row, kind, tracking_number=None):
+    """Envía el aviso de WhatsApp si el cliente aceptó (opt-in) y el módulo
+    está configurado. Nunca lanza excepciones ni rompe el flujo del pedido."""
+    try:
+        if not whatsapp_cloud:
+            return
+        if int(_order_col(order_row, "whatsapp_optin", 0) or 0) != 1:
+            return
+        phone = _order_col(order_row, "customer_phone", "")
+        name = _order_col(order_row, "customer_name", "")
+        whatsapp_cloud.send_order_update(
+            phone, name, order_row["id"], kind, tracking_number
+        )
+    except Exception:
+        pass
+
+
 def _validate_cart(items):
     """Valida el carrito contra la BD. Devuelve (line_items, total_cents, snapshot) o lanza ValueError."""
     if not isinstance(items, list) or not items:
@@ -1172,6 +1329,9 @@ def api_checkout():
     department = (customer.get("department") or "").strip()
     delivery = (customer.get("delivery") or "").strip()
     payment = (customer.get("payment") or "").strip()
+    phone = (customer.get("phone") or "").strip()
+    id_number = (customer.get("id_number") or "").strip()
+    whatsapp_optin = 1 if customer.get("whatsapp_optin") else 0
     if not name or not address or not city or not department:
         return (
             jsonify(
@@ -1183,6 +1343,13 @@ def api_checkout():
             ),
             400,
         )
+    if not valid_phone(phone):
+        return (
+            jsonify(
+                {"error": "Escribe un número de celular válido de 8 dígitos."}
+            ),
+            400,
+        )
     if delivery not in ("domicilio", "oficina"):
         return (
             jsonify(
@@ -1190,6 +1357,22 @@ def api_checkout():
                     "error": "Elige el método de entrega: envío a domicilio "
                     "o recoger en oficina cercana."
                 }
+            ),
+            400,
+        )
+    # La identidad es obligatoria solo para envío a domicilio (la compañía de
+    # cargo la exige para entregar). Si viene informada, debe ser válida.
+    if delivery == "domicilio" and not valid_id_number(id_number):
+        return (
+            jsonify(
+                {"error": "Escribe tu número de identidad (13 dígitos)."}
+            ),
+            400,
+        )
+    if id_number and not valid_id_number(id_number):
+        return (
+            jsonify(
+                {"error": "El número de identidad debe tener 13 dígitos."}
             ),
             400,
         )
@@ -1216,8 +1399,9 @@ def api_checkout():
     cur = db.execute(
         "INSERT INTO orders(items, total_cents, shipping_cents, status, created_at, "
         "customer_name, customer_address, customer_city, customer_department, "
-        "delivery_method, payment_method) "
-        "VALUES(?,?,?, 'pending', ?,?,?,?,?,?,?)",
+        "delivery_method, payment_method, customer_phone, customer_id_number, "
+        "whatsapp_optin, fulfillment_status) "
+        "VALUES(?,?,?, 'pending', ?,?,?,?,?,?,?,?,?,?,'pending')",
         (
             json.dumps(snapshot),
             total,
@@ -1229,6 +1413,9 @@ def api_checkout():
             department,
             delivery,
             payment,
+            norm_phone(phone),
+            "".join(c for c in id_number if c.isdigit()),
+            whatsapp_optin,
         ),
     )
     order_id = cur.lastrowid
@@ -1263,7 +1450,15 @@ def _finalize_order(order_id, auto=False):
         db.execute("UPDATE orders SET status='paid', auto_paid=1 WHERE id=?", (order_id,))
     else:
         db.execute("UPDATE orders SET status='paid' WHERE id=?", (order_id,))
+    # Al confirmarse el pago, el pedido entra en proceso de empaquetamiento.
+    if (_order_col(row, "fulfillment_status", "pending") or "pending") == "pending":
+        db.execute(
+            "UPDATE orders SET fulfillment_status='packing' WHERE id=?", (order_id,)
+        )
     db.commit()
+    # Aviso automático por WhatsApp (solo si el cliente aceptó y el módulo
+    # está configurado). Se hace después del commit para no bloquear el pago.
+    _maybe_send_whatsapp(db, row, "confirmado")
 
 
 @app.route("/api/stripe-webhook", methods=["POST"])
