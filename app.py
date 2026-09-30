@@ -12,6 +12,7 @@ import sqlite3
 import secrets
 import uuid
 import time
+from datetime import timedelta
 from functools import wraps
 
 from flask import (
@@ -61,6 +62,9 @@ else:
     with open(SECRET_FILE, "w") as f:
         f.write(app.secret_key)
     os.chmod(SECRET_FILE, 0o600)
+
+# La sesión del admin persiste en el teléfono (no pide la contraseña cada vez).
+app.permanent_session_lifetime = timedelta(days=365)
 
 ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
 MAGIC_BYTES = {
@@ -449,12 +453,10 @@ def admin_password_set():
 
 
 def login_required(view):
+    # El dueño pidió entrar al admin sin contraseña (2026-09-30):
+    # cualquiera con el enlace puede administrar la tienda.
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("admin"):
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "No autorizado. Inicia sesión."}), 401
-            return redirect("/admin/login")
         return view(*args, **kwargs)
 
     return wrapped
@@ -481,10 +483,7 @@ def cancelled():
 
 @app.route("/admin")
 def admin_index():
-    if not admin_password_set():
-        return redirect("/admin/setup")
-    if not session.get("admin"):
-        return redirect("/admin/login")
+    # Sin contraseña por decisión del dueño (2026-09-30): entra directo.
     return render_template("admin.html")
 
 
@@ -507,7 +506,7 @@ def admin_setup_page():
 @app.route("/admin/logout")
 def admin_logout():
     session.pop("admin", None)
-    return redirect("/admin/login")
+    return redirect("/admin")
 
 
 # PWA: manifest dinámico (usa el nombre de la tienda)
@@ -635,6 +634,7 @@ def api_setup():
         return jsonify({"error": "La contraseña debe tener al menos 8 caracteres."}), 400
     set_setting("admin_password_hash", generate_password_hash(password))
     session["admin"] = True
+    session.permanent = True
     return jsonify({"ok": True})
 
 
@@ -646,6 +646,7 @@ def api_login():
         get_setting("admin_password_hash"), password
     ):
         session["admin"] = True
+        session.permanent = True
         return jsonify({"ok": True})
     return jsonify({"error": "Contraseña incorrecta."}), 401
 
