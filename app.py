@@ -224,7 +224,8 @@ def init_db():
             stripe_session_id TEXT DEFAULT '',
             status TEXT NOT NULL DEFAULT 'pending',
             created_at INTEGER NOT NULL,
-            shipping_cents INTEGER DEFAULT 0
+            shipping_cents INTEGER DEFAULT 0,
+            auto_paid INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -257,6 +258,11 @@ def init_db():
     cols = [c[1] for c in db.execute("PRAGMA table_info(products)").fetchall()]
     if "category" not in cols:
         db.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT ''")
+    # Migración: marca qué pedidos fueron confirmados por pago automático
+    # (tarjeta/cuenta vía pasarela). Esos no se pueden borrar ni revertir.
+    ocols_auto = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
+    if "auto_paid" not in ocols_auto:
+        db.execute("ALTER TABLE orders ADD COLUMN auto_paid INTEGER NOT NULL DEFAULT 0")
     # Migración: fotos persistentes como BLOB (sobreviven a los despliegues).
     if "photo_blob" not in cols:
         db.execute("ALTER TABLE products ADD COLUMN photo_blob BLOB")
@@ -788,6 +794,7 @@ def admin_list_orders():
                 "delivery_method": r["delivery_method"] or "",
                 "payment_method": r["payment_method"] or "",
                 "shipping_cents": r["shipping_cents"] if r["shipping_cents"] else 0,
+                "auto_paid": bool(r["auto_paid"]),
             }
         )
     return jsonify(out)
@@ -819,12 +826,15 @@ def _restore_stock(db, order_row):
 @app.route("/api/admin/orders/<int:order_id>/unpaid", methods=["POST"])
 @login_required
 def admin_mark_order_unpaid(order_id):
-    """Revierte un pedido pagado a pendiente y devuelve las unidades al stock."""
+    """Revierte un pedido pagado a pendiente y devuelve las unidades al stock.
+    Los pedidos con pago automático confirmado están protegidos."""
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"error": "Pedido no encontrado."}), 404
     if row["status"] == "paid":
+        if row["auto_paid"]:
+            return jsonify({"error": "No se puede revertir: el pago fue confirmado automáticamente."}), 403
         _restore_stock(db, row)
         db.execute("UPDATE orders SET status='pending' WHERE id=?", (order_id,))
         db.commit()
@@ -834,11 +844,14 @@ def admin_mark_order_unpaid(order_id):
 @app.route("/api/admin/orders/<int:order_id>", methods=["DELETE"])
 @login_required
 def admin_delete_order(order_id):
-    """Elimina un pedido. Si ya estaba pagado, devuelve el stock primero."""
+    """Elimina un pedido. Si ya estaba pagado, devuelve el stock primero.
+    Los pedidos con pago automático confirmado no se pueden eliminar."""
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row:
         return jsonify({"error": "Pedido no encontrado."}), 404
+    if row["status"] == "paid" and row["auto_paid"]:
+        return jsonify({"error": "No se puede eliminar: el pago fue confirmado automáticamente."}), 403
     if row["status"] == "paid":
         _restore_stock(db, row)
     db.execute("DELETE FROM orders WHERE id=?", (order_id,))
@@ -1049,8 +1062,11 @@ def api_checkout():
     )
 
 
-def _finalize_order(order_id):
-    """Marca el pedido como pagado y descuenta el stock. Idempotente."""
+def _finalize_order(order_id, auto=False):
+    """Marca el pedido como pagado y descuenta el stock. Idempotente.
+    auto=True cuando lo confirma un pago automático (tarjeta/cuenta vía
+    pasarela): esos pedidos quedan protegidos, no se pueden borrar ni
+    revertir desde el admin."""
     db = get_db()
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row or row["status"] == "paid":
@@ -1061,7 +1077,10 @@ def _finalize_order(order_id):
             "UPDATE products SET stock = MAX(0, stock - ?) WHERE id=?",
             (it["qty"], it["id"]),
         )
-    db.execute("UPDATE orders SET status='paid' WHERE id=?", (order_id,))
+    if auto:
+        db.execute("UPDATE orders SET status='paid', auto_paid=1 WHERE id=?", (order_id,))
+    else:
+        db.execute("UPDATE orders SET status='paid' WHERE id=?", (order_id,))
     db.commit()
 
 
