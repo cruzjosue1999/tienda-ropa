@@ -1135,10 +1135,7 @@ def admin_list_orders():
     parsed = []
     pids = set()
     for r in rows:
-        try:
-            items = json.loads(r["items"])
-        except Exception:
-            items = []
+        items = _parse_order_items(r["items"])
         parsed.append(items)
         for it in items:
             pid = it.get("id")
@@ -1196,14 +1193,17 @@ def _restore_stock(db, order_row):
     """Devuelve al inventario las unidades de un pedido (al revertir un pago
     o al eliminar un pedido que ya estaba pagado)."""
     try:
-        items = json.loads(order_row["items"])
+        items = _parse_order_items(order_row["items"])
     except Exception:
         return
     for it in items:
-        db.execute(
-            "UPDATE products SET stock = stock + ? WHERE id=?",
-            (it.get("qty", 0), it.get("id")),
-        )
+        qty = it.get("qty")
+        pid = it.get("id")
+        if isinstance(qty, int) and isinstance(pid, int):
+            db.execute(
+                "UPDATE products SET stock = stock + ? WHERE id=?",
+                (qty, pid),
+            )
 
 
 @app.route("/api/admin/orders/<int:order_id>/unpaid", methods=["POST"])
@@ -1557,6 +1557,23 @@ def _order_col(row, name, default=""):
     return default if v is None else v
 
 
+def _parse_order_items(items_json):
+    """Devuelve los ítems de un pedido como lista de dicts.
+
+    Tolera datos viejos o inesperados en la BD: cualquier cosa que no sea
+    una lista de objetos se convierte en lista vacía (y se filtran los
+    elementos que no sean objetos). Nunca lanza excepciones, para que un
+    pedido con datos raros no tumbe la lista completa de pedidos.
+    """
+    try:
+        items = json.loads(items_json)
+    except Exception:
+        return []
+    if not isinstance(items, list):
+        return []
+    return [it for it in items if isinstance(it, dict)]
+
+
 def _maybe_send_whatsapp(db, order_row, kind, tracking_number=None):
     """Envía el aviso de WhatsApp si el cliente aceptó (opt-in) y el módulo
     está configurado. Nunca lanza excepciones ni rompe el flujo del pedido."""
@@ -1738,11 +1755,15 @@ def _finalize_order(order_id, auto=False):
     row = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     if not row or row["status"] == "paid":
         return
-    items = json.loads(row["items"])
+    items = _parse_order_items(row["items"])
     for it in items:
+        qty = it.get("qty")
+        pid = it.get("id")
+        if not (isinstance(qty, int) and isinstance(pid, int)):
+            continue
         db.execute(
             "UPDATE products SET stock = MAX(0, stock - ?) WHERE id=?",
-            (it["qty"], it["id"]),
+            (qty, pid),
         )
     if auto:
         db.execute("UPDATE orders SET status='paid', auto_paid=1 WHERE id=?", (order_id,))
