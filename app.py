@@ -239,6 +239,16 @@ def init_db():
             mime TEXT DEFAULT '',
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS product_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            data BLOB NOT NULL,
+            mime TEXT DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_product_photos_pid
+            ON product_photos(product_id);
         """
     )
     # Migración de moneda: la tienda ahora usa lempiras (HNL).
@@ -313,7 +323,46 @@ def set_setting(key, value):
     db.commit()
 
 
-def product_to_dict(row):
+def _gallery_items(db, pid):
+    """Fotos de la galería de un producto (sin la portada)."""
+    rows = db.execute(
+        "SELECT id FROM product_photos WHERE product_id=? ORDER BY position, id",
+        (pid,),
+    ).fetchall()
+    return [{"id": r["id"], "url": f"/api/product-photo/{r['id']}"} for r in rows]
+
+
+def _gallery_map(db, pids):
+    """Galería de varios productos en una sola consulta."""
+    m = {pid: [] for pid in pids}
+    if not pids:
+        return m
+    q = ",".join("?" for _ in pids)
+    rows = db.execute(
+        f"SELECT id, product_id FROM product_photos WHERE product_id IN ({q}) "
+        "ORDER BY position, id",
+        list(pids),
+    ).fetchall()
+    for r in rows:
+        m[r["product_id"]].append(
+            {"id": r["id"], "url": f"/api/product-photo/{r['id']}"}
+        )
+    return m
+
+
+def _photo_state(db, pid):
+    """Portada + galería actuales de un producto (para el admin)."""
+    row = db.execute("SELECT photo FROM products WHERE id=?", (pid,)).fetchone()
+    return {
+        "photo": (row["photo"] or "") if row else "",
+        "photo_items": _gallery_items(db, pid),
+    }
+
+
+def product_to_dict(row, gallery=None):
+    photo = row["photo"] or ""
+    items = gallery or []
+    photos = ([photo] if photo else []) + [it["url"] for it in items]
     return {
         "id": row["id"],
         "name": row["name"],
@@ -322,7 +371,9 @@ def product_to_dict(row):
         "sizes": json.loads(row["sizes"] or "[]"),
         "sku": row["sku"] or "",
         "stock": row["stock"],
-        "photo": row["photo"] or "",
+        "photo": photo,
+        "photos": photos,
+        "photo_items": items,
         "active": bool(row["active"]),
         "category": row["category"] or "",
         "created_at": row["created_at"],
@@ -568,7 +619,8 @@ def api_products():
     rows = db.execute(
         "SELECT * FROM products WHERE active=1 ORDER BY created_at DESC"
     ).fetchall()
-    return jsonify([product_to_dict(r) for r in rows])
+    gmap = _gallery_map(db, [r["id"] for r in rows])
+    return jsonify([product_to_dict(r, gmap[r["id"]]) for r in rows])
 
 
 @app.route("/api/order-status")
@@ -594,7 +646,8 @@ def api_order_status():
 def admin_list_products():
     db = get_db()
     rows = db.execute("SELECT * FROM products ORDER BY created_at DESC").fetchall()
-    return jsonify([product_to_dict(r) for r in rows])
+    gmap = _gallery_map(db, [r["id"] for r in rows])
+    return jsonify([product_to_dict(r, gmap[r["id"]]) for r in rows])
 
 
 def parse_product_input(data):
@@ -641,10 +694,21 @@ def admin_create_product():
         ),
     )
     pid = cur.lastrowid
-    _attach_pending_photo(db, pid, (data.get("photo_upload_id") or "").strip())
+    upload_ids = data.get("photo_upload_ids") or []
+    if isinstance(upload_ids, str):
+        upload_ids = [upload_ids]
+    upload_ids = [u.strip() for u in upload_ids if u and u.strip()]
+    if not upload_ids:
+        single = (data.get("photo_upload_id") or "").strip()
+        if single:
+            upload_ids = [single]
+    if upload_ids:
+        _attach_pending_photo(db, pid, upload_ids[0])
+        for uid in upload_ids[1:]:
+            _add_gallery_photo(db, pid, uid)
     db.commit()
     row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return jsonify(product_to_dict(row)), 201
+    return jsonify(product_to_dict(row, _gallery_items(db, pid))), 201
 
 
 @app.route("/api/admin/products/<int:pid>", methods=["PUT"])
@@ -673,7 +737,7 @@ def admin_update_product(pid):
     if cur.rowcount == 0:
         return jsonify({"error": "Producto no encontrado."}), 404
     row = db.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
-    return jsonify(product_to_dict(row))
+    return jsonify(product_to_dict(row, _gallery_items(db, pid)))
 
 
 @app.route("/api/admin/products/<int:pid>", methods=["DELETE"])
@@ -685,6 +749,7 @@ def admin_delete_product(pid):
         return jsonify({"error": "Producto no encontrado."}), 404
     # La foto (blob) se borra junto con la fila del producto.
     db.execute("DELETE FROM products WHERE id=?", (pid,))
+    db.execute("DELETE FROM product_photos WHERE product_id=?", (pid,))
     db.commit()
     return jsonify({"ok": True})
 
@@ -721,6 +786,104 @@ def _attach_pending_photo(db, pid, upload_id):
     )
     db.execute("DELETE FROM pending_uploads WHERE id=?", (upload_id,))
     return True
+
+
+def _add_gallery_photo(db, pid, upload_id):
+    """Mueve una subida pendiente a la galería del producto. Devuelve el id o None."""
+    if not upload_id:
+        return None
+    if not db.execute("SELECT id FROM products WHERE id=?", (pid,)).fetchone():
+        return None
+    row = db.execute(
+        "SELECT data, mime FROM pending_uploads WHERE id=?", (upload_id,)
+    ).fetchone()
+    if not row or not row["data"]:
+        return None
+    pos = db.execute(
+        "SELECT COALESCE(MAX(position), -1)+1 FROM product_photos WHERE product_id=?",
+        (pid,),
+    ).fetchone()[0]
+    cur = db.execute(
+        "INSERT INTO product_photos(product_id, data, mime, position, created_at)"
+        " VALUES(?,?,?,?,?)",
+        (pid, bytes(row["data"]), row["mime"] or "image/jpeg", pos, int(time.time())),
+    )
+    db.execute("DELETE FROM pending_uploads WHERE id=?", (upload_id,))
+    return cur.lastrowid
+
+
+def _promote_to_cover(db, pid, photo_id):
+    """Mueve una foto de la galería a la portada del producto."""
+    row = db.execute(
+        "SELECT data, mime FROM product_photos WHERE id=? AND product_id=?",
+        (photo_id, pid),
+    ).fetchone()
+    if not row or not row["data"]:
+        return False
+    db.execute(
+        "UPDATE products SET photo_blob=?, photo_mime=?, photo=? WHERE id=?",
+        (bytes(row["data"]), row["mime"] or "image/jpeg", f"/api/photo/{pid}", pid),
+    )
+    db.execute("DELETE FROM product_photos WHERE id=?", (photo_id,))
+    return True
+
+
+@app.route("/api/admin/products/<int:pid>/photos", methods=["POST"])
+@login_required
+def admin_add_photo(pid):
+    """Agrega una foto (ya subida vía /api/upload) a la galería del producto."""
+    data = request.get_json(force=True, silent=True) or {}
+    uid = (data.get("upload_id") or "").strip()
+    if not uid:
+        return jsonify({"error": "Falta upload_id."}), 400
+    db = get_db()
+    new_id = _add_gallery_photo(db, pid, uid)
+    if not new_id:
+        return jsonify({"error": "No se pudo agregar la foto."}), 400
+    # Si el producto no tiene portada, la primera foto de la galería la hereda.
+    cov = db.execute("SELECT photo_blob FROM products WHERE id=?", (pid,)).fetchone()
+    if cov is not None and not cov["photo_blob"]:
+        _promote_to_cover(db, pid, new_id)
+    db.commit()
+    return jsonify(_photo_state(db, pid)), 201
+
+
+@app.route("/api/admin/products/<int:pid>/photos/<int:photo_id>", methods=["DELETE"])
+@login_required
+def admin_delete_photo(pid, photo_id):
+    db = get_db()
+    cur = db.execute(
+        "DELETE FROM product_photos WHERE id=? AND product_id=?", (photo_id, pid)
+    )
+    db.commit()
+    if cur.rowcount == 0:
+        return jsonify({"error": "Foto no encontrada."}), 404
+    return jsonify(_photo_state(db, pid))
+
+
+@app.route("/api/admin/products/<int:pid>/photos/<int:photo_id>/cover", methods=["POST"])
+@login_required
+def admin_photo_cover(pid, photo_id):
+    """Hace que una foto de la galería sea la portada del producto."""
+    db = get_db()
+    if not _promote_to_cover(db, pid, photo_id):
+        return jsonify({"error": "Foto no encontrada."}), 404
+    db.commit()
+    return jsonify(_photo_state(db, pid))
+
+
+@app.route("/api/product-photo/<int:photo_id>")
+def serve_gallery_photo(photo_id):
+    """Sirve una foto de la galería de un producto."""
+    db = get_db()
+    row = db.execute(
+        "SELECT data, mime FROM product_photos WHERE id=?", (photo_id,)
+    ).fetchone()
+    if not row or not row["data"]:
+        return jsonify({"error": "No encontrado."}), 404
+    return app.response_class(
+        bytes(row["data"]), mimetype=row["mime"] or "image/jpeg"
+    )
 
 
 @app.route("/api/upload", methods=["POST"])
