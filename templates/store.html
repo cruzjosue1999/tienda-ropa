@@ -52,6 +52,33 @@
 
   <section id="catalogo" aria-label="Productos">
     <h2 class="section-title" id="catalog-title">Novedades</h2>
+    <div class="search-bar">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input id="search-input" type="search" placeholder="Buscar productos… (ej. Nike, camisa)" aria-label="Buscar productos" autocomplete="off">
+      <button id="search-clear" class="icon-btn hidden" aria-label="Limpiar búsqueda">✕</button>
+    </div>
+    <div class="filter-row">
+      <select id="filter-avail" aria-label="Disponibilidad">
+        <option value="all">Todos</option>
+        <option value="in">Disponibles</option>
+      </select>
+      <select id="filter-price" aria-label="Rango de precio">
+        <option value="all">Todos los precios</option>
+        <option value="lt200">Menos de L200</option>
+        <option value="mid200-500">L200 – L500</option>
+        <option value="gt500">Más de L500</option>
+      </select>
+      <select id="filter-sort" aria-label="Ordenar">
+        <option value="rel">Relevancia</option>
+        <option value="asc">Precio: menor a mayor</option>
+        <option value="desc">Precio: mayor a menor</option>
+        <option value="new">Novedades</option>
+      </select>
+    </div>
+    <div class="result-row">
+      <p id="result-count" class="result-count" aria-live="polite"></p>
+      <button id="clear-filters" class="link-btn hidden">Limpiar filtros</button>
+    </div>
     <div id="catalog" class="grid" aria-live="polite">
       <p class="loading">Cargando productos…</p>
     </div>
@@ -182,6 +209,7 @@
 </div>
 <div id="drawer-backdrop" class="backdrop hidden"></div>
 
+<script src="/static/product_filters.js"></script>
 <script src="/static/store.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
