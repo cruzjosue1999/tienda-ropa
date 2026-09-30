@@ -31,13 +31,19 @@
     ind.setAttribute('aria-hidden', 'true');
     ind.innerHTML = '<span class="ptr-arrow">↓</span><span class="ptr-text">Jala para actualizar</span>';
     document.body.insertBefore(ind, document.body.firstChild);
+    // Distancia para ocultar el indicador: su alto (56px) + 4px + el desfase
+    // superior que le dé el CSS (en la tienda se despega de la barra de estado).
+    var csTop = parseFloat(window.getComputedStyle(ind).top) || 0;
+    ind._hideY = 60 + csTop;
     return ind;
   }
+
+  function hideDist() { return (ind && ind._hideY) || 60; }
 
   function setPull(dy) {
     var el = ensureIndicator();
     var d = Math.max(0, Math.min(dy, MAX_PULL));
-    el.style.transform = 'translateY(' + (d - 60) + 'px)';
+    el.style.transform = 'translateY(' + (d - hideDist()) + 'px)';
     if (d >= THRESHOLD) {
       if (state !== 'ready') {
         state = 'ready';
@@ -54,7 +60,7 @@
   }
 
   function hide() {
-    if (ind) ind.style.transform = 'translateY(-60px)';
+    if (ind) ind.style.transform = 'translateY(' + (-hideDist()) + 'px)';
     state = 'idle';
   }
 

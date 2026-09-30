@@ -532,6 +532,11 @@ body.dark .donut-lbl { fill: #94a3b8; }
   pointer-events: none;
 }
 body.dark #ptr-indicator { background: #1e293b; color: #e5e7eb; }
+/* La tienda no tiene barra fija como el admin: el indicador se despega de la
+   barra de estado para que no quede pegado hasta arriba. */
+body:not(.dark) #ptr-indicator {
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+}
 #ptr-indicator .ptr-arrow { display: inline-block; font-size: 1.25rem; transition: transform .2s; }
 #ptr-indicator.ready .ptr-arrow { transform: rotate(180deg); }
 #ptr-indicator .ptr-spinner {
