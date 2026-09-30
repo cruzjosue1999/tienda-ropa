@@ -78,8 +78,8 @@
     <h2>Tu carrito</h2>
     <button id="cart-close" class="icon-btn" aria-label="Cerrar">✕</button>
   </div>
-  <div id="cart-items" class="cart-items"></div>
-  <div class="drawer-foot">
+  <div class="drawer-body">
+    <div id="cart-items" class="cart-items"></div>
     <div class="delivery-form">
       <h3>📦 Datos de entrega</h3>
       <input id="cust-name" type="text" placeholder="Nombre completo" autocomplete="name" maxlength="120">
@@ -134,6 +134,8 @@
         </label>
       </div>
     </div>
+  </div>
+  <div class="drawer-foot">
     <div class="total-row ship-row"><span>Envío</span><strong id="cart-shipping">L0.00</strong></div>
     <div class="total-row"><span>Total</span><strong id="cart-total">L0.00</strong></div>
     <button id="checkout-btn" class="btn-primary">Confirmar pedido ✅</button>
