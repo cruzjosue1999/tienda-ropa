@@ -280,6 +280,33 @@
 
   /* Pedidos */
   var STATUS_TXT = { pending: '⏳ pendiente', paid: '✅ pagado', cancelled: '❌ cancelado', error: '⚠️ error' };
+  var FST_TXT = {
+    pending: '🕐 Pendiente de pago', packing: '📦 En empaquetamiento',
+    ready: '🎁 Listo para envío', shipped: '🚚 Enviado',
+    delivered: '✅ Entregado', cancelled: '❌ Cancelado'
+  };
+  function waNumber(raw) {
+    var d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11 && d.indexOf('504') === 0) d = d.slice(3);
+    if (d.length === 8) d = '504' + d;
+    return d;
+  }
+  function waLink(o, kind) {
+    var num = waNumber(o.customer_phone);
+    if (num.length < 11) return '';
+    var name = (o.customer_name || 'cliente').split(' ')[0];
+    var msg;
+    if (kind === 'confirmado') {
+      msg = '¡Hola ' + name + '! Tu pedido #' + o.id + ' de *Tu Nuevo Estilo* fue confirmado ✅' +
+        ' y ya está en proceso de empaquetamiento 📦.' +
+        ' Te avisaremos por aquí cuando tu paquete esté listo.';
+    } else {
+      msg = '¡Hola ' + name + '! Tu paquete del pedido #' + o.id + ' de *Tu Nuevo Estilo*' +
+        ' ya está envuelto y listo 🎁. La compañía de envíos lo recogerá pronto.' +
+        (o.tracking_number ? ' Número de guía: ' + o.tracking_number + '.' : '');
+    }
+    return 'https://wa.me/' + num + '?text=' + encodeURIComponent(msg);
+  }
   async function loadOrders() {
     var list = document.getElementById('order-list');
     try {
@@ -300,8 +327,16 @@
           deliveryTxt = '<small>👤 ' + escapeHtml(o.customer_name) + (place ? ' · ' + escapeHtml(place) : '') + '</small>' +
             '<small>' + method + '</small>';
         }
+        var contactTxt = '';
+        if (o.customer_phone) contactTxt += '<small>📱 ' + escapeHtml(o.customer_phone) + '</small>';
+        if (o.customer_id_number) contactTxt += '<small>🪪 ID: ' + escapeHtml(o.customer_id_number) + '</small>';
+        if (o.whatsapp_optin) contactTxt += '<small>💬 Aceptó avisos por WhatsApp</small>';
         var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
           : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
+        var fst = o.fulfillment_status || 'pending';
+        var fstOpts = Object.keys(FST_TXT).map(function (k) {
+          return '<option value="' + k + '"' + (k === fst ? ' selected' : '') + '>' + FST_TXT[k] + '</option>';
+        }).join('');
         var actions = '';
         if (o.status === 'pending') {
           actions = '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button>' +
@@ -314,20 +349,30 @@
         }
         // Si fue pago automático confirmado: sin botones, el pedido está protegido.
         var statusTxt = (o.status === 'paid' && o.auto_paid) ? '✅ pagado (automático)' : (STATUS_TXT[o.status] || o.status);
+        var waBtns = '';
+        var waConf = waLink(o, 'confirmado'), waReady = waLink(o, 'listo');
+        if (waConf) waBtns += '<button class="btn-small wa-conf" title="Abrir WhatsApp con el aviso de confirmación">💬 Avisar confirmación</button>';
+        if (waReady) waBtns += '<button class="btn-small wa-ready" title="Abrir WhatsApp con el aviso de paquete listo">💬 Avisar listo</button>';
+        if (waBtns) waBtns = '<div class="actions">' + waBtns + '</div>';
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
-          '<small>' + items + '</small>' + deliveryTxt +
+          '<small>' + items + '</small>' + deliveryTxt + contactTxt +
           (payTxt ? '<small>' + payTxt + '</small>' : '') +
           (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
-          '<small>' + d.toLocaleString('es-US') + ' · ' + statusTxt + '</small></div>' +
-          actions;
-        (function (id, rowEl) {
+          '<small>' + d.toLocaleString('es-US') + ' · ' + statusTxt + '</small>' +
+          '<div class="fst-row"><span class="fst-badge">' + (FST_TXT[fst] || fst) + '</span>' +
+          '<select class="fst-select" aria-label="Cambiar estado del pedido">' + fstOpts + '</select></div>' +
+          '<div class="track-row"><input class="track-input" type="text" placeholder="N.º de guía" value="' +
+          escapeHtml(o.tracking_number || '') + '">' +
+          '<button class="btn-small save-track">💾 Guardar guía</button></div></div>' +
+          actions + waBtns;
+        (function (id, rowEl, order) {
           var paidBtn = rowEl.querySelector('.mark-paid');
           if (paidBtn) paidBtn.addEventListener('click', async function () {
             if (!confirm('¿Confirmas que recibiste el pago del pedido #' + id + '? Se descontará el inventario.')) return;
             paidBtn.disabled = true;
             try {
               await api('/api/admin/orders/' + id + '/paid', { method: 'POST' });
-              loadOrders();
+              loadOrders(); showNotice('Pago confirmado ✅ El pedido pasó a empaquetamiento.');
             } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); paidBtn.disabled = false; }
           });
           var unpaidBtn = rowEl.querySelector('.mark-unpaid');
@@ -348,12 +393,38 @@
               loadOrders();
             } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); delBtn.disabled = false; }
           });
-        })(o.id, row);
+          var fstSel = rowEl.querySelector('.fst-select');
+          fstSel.addEventListener('change', async function () {
+            var trk = rowEl.querySelector('.track-input').value.trim();
+            fstSel.disabled = true;
+            try {
+              await api('/api/admin/orders/' + id + '/status', { method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: fstSel.value, tracking_number: trk }) });
+              loadOrders(); showNotice('Estado actualizado ✅');
+            } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); fstSel.disabled = false; }
+          });
+          var saveTrk = rowEl.querySelector('.save-track');
+          saveTrk.addEventListener('click', async function () {
+            var trk = rowEl.querySelector('.track-input').value.trim();
+            saveTrk.disabled = true;
+            try {
+              await api('/api/admin/orders/' + id + '/status', { method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: fstSel.value, tracking_number: trk }) });
+              showNotice('Guía guardada ✅');
+            } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
+            saveTrk.disabled = false;
+          });
+          var waC = rowEl.querySelector('.wa-conf');
+          if (waC) waC.addEventListener('click', function () { window.open(waLink(order, 'confirmado'), '_blank'); });
+          var waR = rowEl.querySelector('.wa-ready');
+          if (waR) waR.addEventListener('click', function () { window.open(waLink(order, 'listo'), '_blank'); });
+        })(o.id, row, o);
         list.appendChild(row);
       });
     } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
   }
-
   /* Ajustes */
   async function loadSettings() {
     try {

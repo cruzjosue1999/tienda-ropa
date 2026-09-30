@@ -367,3 +367,34 @@ body { background: var(--cream); color: var(--ink); }
   padding: 10px 12px; font-size: .9rem;
 }
 .order-success .btn-primary { margin-top: 6px; width: 100%; }
+
+/* Fase 1 pedidos: teléfono, identidad, WhatsApp opt-in, rastreo */
+.wa-optin { display: flex !important; align-items: flex-start; gap: 8px; font-size: .88rem; margin-top: 8px; }
+.wa-optin input { width: auto; margin-top: 2px; }
+.delivery-form .hint { font-size: .78rem; color: #5b6472; margin: 4px 0 0; }
+.track-link, .foot-link { color: #f0b429; font-weight: 600; text-decoration: none; padding: 8px 10px; white-space: nowrap; }
+.track-link:hover, .foot-link:hover { text-decoration: underline; }
+.track-save { margin-top: 10px; font-size: .9rem; }
+.track-save a { color: #0a2a5e; font-weight: 700; }
+
+/* Admin: estados de cumplimiento y guía */
+.fst-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.fst-badge { background: #e0e7ff; color: #1e3a8a; border-radius: 999px; padding: 3px 10px; font-size: .78rem; font-weight: 700; }
+.fst-select { font-size: .85rem; padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; }
+.track-row { display: flex; gap: 8px; margin-top: 6px; }
+.track-input { flex: 1; min-width: 0; font-size: .85rem; padding: 6px 8px; border-radius: 8px; border: 1px solid #cbd5e1; }
+body.dark .fst-badge { background: #1e3a8a; color: #dbeafe; }
+body.dark .fst-select, body.dark .track-input { background: #1f2937; border-color: #374151; color: #f3f4f6; }
+
+/* Página de rastreo */
+.track-page { max-width: 560px; margin: 0 auto; padding: 16px; }
+.track-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+.track-card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.track-card .form-row { margin-bottom: 10px; }
+.track-card .btn-primary { width: 100%; }
+.timeline { list-style: none; margin: 12px 0; padding: 0; }
+.timeline .step { padding: 10px 12px 10px 14px; border-left: 3px solid #e5e7eb; margin-left: 6px; font-size: .92rem; color: #6b7280; }
+.timeline .step.done { color: #065f46; border-color: #10b981; }
+.timeline .step.active { color: #0a2a5e; border-color: #0a2a5e; font-weight: 700; background: #f0f6ff; border-radius: 0 8px 8px 0; }
+.timeline .step.cancelled { color: #991b1b; border-color: #dc2626; font-weight: 700; }
+.guide { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px 12px; font-weight: 600; }

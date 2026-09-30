@@ -1,5 +1,5 @@
 /* Service Worker - tienda pública */
-var CACHE = 'tienda-v12';
+var CACHE = 'tienda-v13';
 var ASSETS = ['/', '/static/style.css', '/static/store.js', '/manifest.json'];
 
 self.addEventListener('install', function (e) {

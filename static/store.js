@@ -525,20 +525,38 @@
   backdrop.addEventListener('click', closeDrawer);
   Array.prototype.forEach.call(
     document.querySelectorAll('input[name="delivery"]'),
-    function (r) { r.addEventListener('change', renderCart); }
+    function (r) { r.addEventListener('change', function () { toggleIdField(); renderCart(); }); }
   );
 
   /* Datos de entrega: se guardan en el teléfono para no pedirlos cada vez */
   var CUST_KEY = 'usstyle_customer';
+  function normPhone(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    if (d.length === 11 && d.indexOf('504') === 0) d = d.slice(3);
+    return d;
+  }
+  function validPhone(v) { return /^\d{8}$/.test(normPhone(v)); }
+  function validIdNum(v) { return /^\d{13}$/.test(String(v || '').replace(/\D/g, '')); }
   function readCustomer() {
     return {
       name: document.getElementById('cust-name').value.trim(),
       address: document.getElementById('cust-address').value.trim(),
       city: document.getElementById('cust-city').value.trim(),
       department: document.getElementById('cust-department').value,
+      phone: document.getElementById('cust-phone').value.trim(),
+      id_number: document.getElementById('cust-idnum').value.trim(),
+      whatsapp_optin: document.getElementById('cust-wa-optin').checked,
       delivery: (document.querySelector('input[name="delivery"]:checked') || {}).value || '',
       payment: (document.querySelector('input[name="payment"]:checked') || {}).value || ''
     };
+  }
+  function toggleIdField() {
+    var isHome = deliveryMethod() === 'domicilio';
+    var idInput = document.getElementById('cust-idnum');
+    var hint = document.getElementById('idnum-hint');
+    idInput.classList.toggle('hidden', !isHome);
+    if (hint) hint.classList.toggle('hidden', !isHome);
+    if (!isHome) idInput.value = '';
   }
   function prefillCustomer() {
     try {
@@ -548,6 +566,9 @@
       if (c.address) document.getElementById('cust-address').value = c.address;
       if (c.city) document.getElementById('cust-city').value = c.city;
       if (c.department) document.getElementById('cust-department').value = c.department;
+      if (c.phone) document.getElementById('cust-phone').value = c.phone;
+      if (c.id_number) document.getElementById('cust-idnum').value = c.id_number;
+      document.getElementById('cust-wa-optin').checked = !!c.whatsapp_optin;
       if (c.delivery) {
         var r = document.querySelector('input[name="delivery"][value="' + c.delivery + '"]');
         if (r) r.checked = true;
@@ -556,6 +577,7 @@
         var p = document.querySelector('input[name="payment"][value="' + c.payment + '"]');
         if (p) p.checked = true;
       }
+      toggleIdField();
     } catch (e) {}
   }
 
@@ -596,6 +618,21 @@
     var customer = readCustomer();
     if (!customer.name || !customer.address || !customer.city || !customer.department) {
       checkoutError.textContent = 'Completa tu nombre, dirección, ciudad y departamento para el envío.';
+      checkoutError.classList.remove('hidden');
+      return;
+    }
+    if (!validPhone(customer.phone)) {
+      checkoutError.textContent = 'Escribe un número de celular válido de 8 dígitos.';
+      checkoutError.classList.remove('hidden');
+      return;
+    }
+    if (customer.delivery === 'domicilio' && !validIdNum(customer.id_number)) {
+      checkoutError.textContent = 'Para el envío a domicilio necesitamos tu número de identidad (13 dígitos).';
+      checkoutError.classList.remove('hidden');
+      return;
+    }
+    if (customer.id_number && !validIdNum(customer.id_number)) {
+      checkoutError.textContent = 'El número de identidad debe tener 13 dígitos.';
       checkoutError.classList.remove('hidden');
       return;
     }
