@@ -435,8 +435,15 @@
       list.innerHTML = '';
       orders.forEach(function (o) {
         var items = o.items.map(function (it) {
-          return it.qty + '× ' + escapeHtml(it.name) + (it.size ? ' (talla ' + escapeHtml(it.size) + ')' : '');
-        }).join('<br>');
+          var photo = it.photo_url
+            ? '<img class="order-item-photo" src="' + it.photo_url + '" alt="" loading="lazy">'
+            : '<span class="order-item-photo ph">📷</span>';
+          return '<div class="order-item">' + photo +
+            '<div class="order-item-info"><strong>' + escapeHtml(it.name) + '</strong>' +
+            (it.size ? '<small>Talla ' + escapeHtml(it.size) + '</small>' : '') + '</div>' +
+            '<span class="order-item-qty">' + it.qty + '×</span>' +
+            '<span class="order-item-price">' + money(it.price_cents || 0) + '</span></div>';
+        }).join('');
         var row = document.createElement('div');
         row.className = 'admin-row';
         var d = new Date(o.created_at * 1000);
@@ -477,7 +484,7 @@
         if (waReady) waBtns += '<button class="btn-small wa-ready" title="Abrir WhatsApp con el aviso de paquete listo">💬 Avisar listo</button>';
         if (waBtns) waBtns = '<div class="actions">' + waBtns + '</div>';
         row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
-          '<small>' + items + '</small>' + deliveryTxt + contactTxt +
+          '<div class="order-items">' + items + '</div>' + deliveryTxt + contactTxt +
           (payTxt ? '<small>' + payTxt + '</small>' : '') +
           (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
           '<small>' + d.toLocaleString('es-US') + ' · ' + statusTxt + '</small>' +
