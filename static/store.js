@@ -19,6 +19,8 @@
   var pvStage = document.getElementById('photo-viewer-stage');
   var pvImg = document.getElementById('photo-viewer-img');
   var pvCloseBtn = document.getElementById('photo-viewer-close');
+  var pvPrev = document.getElementById('pv-prev');
+  var pvNext = document.getElementById('pv-next');
   var infoModal = document.getElementById('info-modal');
   var products = [];
   var infoData = {};
@@ -165,7 +167,7 @@
       if (p.photo) {
         card.querySelector('.p-photo').addEventListener('click', function (e) {
           e.stopPropagation();
-          openPhotoViewer(p.photo, p.name);
+          openPhotoViewer([p.photo], 0, p.name);
         });
       }
       card.querySelector('.p-qty').addEventListener('click', function (e) { e.stopPropagation(); });
@@ -215,9 +217,16 @@
     if (!p) { showNotice('Producto no disponible'); return; }
     pdetailOpenId = p.id;
     pdetailTitle.textContent = p.name;
-    var photo = p.photo
-      ? '<img class="pdetail-photo" src="' + p.photo + '" alt="' + escapeHtml(p.name) + '">'
+    // Galería: portada primero, luego las fotos adicionales.
+    var gallery = (p.photos && p.photos.length) ? p.photos : (p.photo ? [p.photo] : []);
+    var photo = gallery.length
+      ? '<img class="pdetail-photo" id="pdetail-main" src="' + gallery[0] + '" alt="' + escapeHtml(p.name) + '">'
       : '<div class="no-photo">🛍️</div>';
+    var thumbs = gallery.length > 1
+      ? '<div class="pdetail-thumbs">' + gallery.map(function (src, i) {
+          return '<img src="' + src + '" alt="" data-idx="' + i + '"' + (i === 0 ? ' class="active"' : '') + '>';
+        }).join('') + '</div>'
+      : '';
     var desc = p.description ? '<p class="pdetail-desc">' + escapeHtml(p.description) + '</p>' : '';
     var sizeOpts = (p.sizes || []).map(function (s) {
       return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>';
@@ -228,16 +237,27 @@
       : (p.stock <= 3 ? '<span class="stock low">¡Solo quedan ' + p.stock + '!</span>'
                       : '<span class="stock">' + p.stock + ' disponibles</span>');
     pdetailBody.innerHTML =
-      photo +
+      photo + thumbs +
       '<div class="price">' + money(p.price_cents) + '</div>' +
       stockTxt + desc + sizeSel +
       '<div class="add-row">' +
         '<input type="number" id="pdetail-qty" value="1" min="1" max="' + p.stock + '" aria-label="Cantidad">' +
         '<button class="btn-primary" id="pdetail-add"' + (p.stock <= 0 ? ' disabled' : '') + '>Agregar al carrito</button>' +
       '</div>';
-    if (p.photo) {
-      pdetailBody.querySelector('.pdetail-photo').addEventListener('click', function () {
-        openPhotoViewer(p.photo, p.name);
+    if (gallery.length) {
+      var mainImg = pdetailBody.querySelector('#pdetail-main');
+      var gIdx = 0;
+      var thumbImgs = pdetailBody.querySelectorAll('.pdetail-thumbs img');
+      thumbImgs.forEach(function (t) {
+        t.addEventListener('click', function () {
+          gIdx = parseInt(t.getAttribute('data-idx'), 10);
+          mainImg.src = gallery[gIdx];
+          thumbImgs.forEach(function (x) { x.classList.remove('active'); });
+          t.classList.add('active');
+        });
+      });
+      mainImg.addEventListener('click', function () {
+        openPhotoViewer(gallery, gIdx, p.name);
       });
     }
     if (p.stock > 0) {
@@ -304,16 +324,35 @@
     pv.baseW = pvImg.clientWidth;
     pv.baseH = pvImg.clientHeight;
   }
-  function openPhotoViewer(src, name) {
-    pvImg.src = src;
-    pvImg.alt = name ? 'Foto de ' + name : 'Foto del producto';
+  var pvPhotos = [];
+  var pvIndex = 0;
+  var pvName = '';
+  function openPhotoViewer(photos, index, name) {
+    // Acepta un arreglo de fotos o una sola url (compatibilidad).
+    pvPhotos = (typeof photos === 'string') ? [photos] : (photos || []);
+    pvIndex = index || 0;
+    pvName = name || '';
+    pvShow();
+  }
+  function pvShow() {
+    pvImg.src = pvPhotos[pvIndex];
+    pvImg.alt = pvName ? 'Foto de ' + pvName : 'Foto del producto';
     pv.scale = 1; pv.tx = 0; pv.ty = 0;
     pvImg.style.transform = '';
+    var multi = pvPhotos.length > 1;
+    pvPrev.classList.toggle('hidden', !multi);
+    pvNext.classList.toggle('hidden', !multi);
     photoViewer.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     if (pvImg.complete && pvImg.naturalWidth) pvMeasure();
     else pvImg.onload = pvMeasure;
   }
+  function pvStep(d) {
+    pvIndex = (pvIndex + d + pvPhotos.length) % pvPhotos.length;
+    pvShow();
+  }
+  pvPrev.addEventListener('click', function (e) { e.stopPropagation(); pvStep(-1); });
+  pvNext.addEventListener('click', function (e) { e.stopPropagation(); pvStep(1); });
   function closePhotoViewer() {
     if (pv.tapTimer) { clearTimeout(pv.tapTimer); pv.tapTimer = null; }
     photoViewer.classList.add('hidden');

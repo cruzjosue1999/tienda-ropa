@@ -56,11 +56,11 @@
     document.getElementById('p-sizes').value = p ? (p.sizes || []).join(', ') : '';
     document.getElementById('p-category').value = p ? (p.category || '') : '';
     document.getElementById('p-sku').value = p ? p.sku : '';
-    document.getElementById('p-photo').value = p ? p.photo : '';
-    document.getElementById('p-photo-file').value = '';
-    var prev = document.getElementById('p-photo-preview');
-    if (p && p.photo) { prev.src = p.photo; prev.classList.remove('hidden'); }
-    else { prev.classList.add('hidden'); }
+    editingPid = p ? p.id : null;
+    galleryItems = p ? (p.photo_items || []) : [];
+    coverUrl = p ? (p.photo || '') : '';
+    pendingUploads = [];
+    renderPhotoGrid();
     document.getElementById('p-active').checked = p ? p.active : true;
     document.getElementById('product-error').classList.add('hidden');
     modal.classList.remove('hidden');
@@ -70,18 +70,102 @@
   modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
   document.getElementById('new-product-btn').addEventListener('click', function () { openModal(null); });
 
-  document.getElementById('p-photo-file').addEventListener('change', async function (e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    var fd = new FormData();
-    fd.append('file', file);
+  /* Fotos múltiples del producto.
+     En un producto nuevo las fotos quedan pendientes hasta guardar;
+     en uno existente se agregan, borran o cambian de portada al momento. */
+  var editingPid = null;
+  var galleryItems = [];   // [{id, url}] fotos guardadas (sin la portada)
+  var coverUrl = '';       // url de la portada actual
+  var pendingUploads = []; // [{upload_id, url}] fotos por guardar (producto nuevo)
+  var photosGrid = document.getElementById('p-photos-grid');
+
+  function photoThumb(src, badge, buttons) {
+    var d = document.createElement('div');
+    d.className = 'photo-thumb';
+    d.innerHTML = '<img src="' + src + '" alt="">' +
+      (badge ? '<span class="photo-badge">' + badge + '</span>' : '') +
+      '<div class="photo-btns">' + buttons + '</div>';
+    return d;
+  }
+
+  function renderPhotoGrid() {
+    photosGrid.innerHTML = '';
+    if (editingPid === null) {
+      pendingUploads.forEach(function (u, i) {
+        photosGrid.appendChild(photoThumb(u.url,
+          i === 0 ? '⭐ Portada' : '',
+          '<button type="button" data-pdel="' + i + '" title="Quitar">✕</button>'));
+      });
+    } else {
+      if (coverUrl) {
+        photosGrid.appendChild(photoThumb(coverUrl, '⭐ Portada',
+          '<button type="button" data-coverdel title="Quitar portada">✕</button>'));
+      }
+      galleryItems.forEach(function (it) {
+        photosGrid.appendChild(photoThumb(it.url, '',
+          '<button type="button" data-makecover="' + it.id + '" title="Hacer portada">⭐</button>' +
+          '<button type="button" data-gdel="' + it.id + '" title="Borrar">✕</button>'));
+      });
+    }
+    document.getElementById('p-photo').value = coverUrl;
+  }
+
+  function syncPhotoState(st) {
+    coverUrl = st.photo || '';
+    galleryItems = st.photo_items || [];
+    renderPhotoGrid();
+  }
+
+  photosGrid.addEventListener('click', async function (e) {
+    var b = e.target.closest ? e.target.closest('button') : null;
+    if (!b) return;
     try {
-      var d = await api('/api/upload', { method: 'POST', body: fd });
-      document.getElementById('p-photo').value = d.url;
-      var prev = document.getElementById('p-photo-preview');
-      prev.src = d.url; prev.classList.remove('hidden');
-      showNotice('Foto subida ✅');
+      if (b.hasAttribute('data-pdel')) {
+        pendingUploads.splice(parseInt(b.getAttribute('data-pdel'), 10), 1);
+        renderPhotoGrid();
+      } else if (b.hasAttribute('data-coverdel')) {
+        coverUrl = '';
+        renderPhotoGrid();
+        showNotice('Portada quitada. Guarda el producto para aplicar.');
+      } else if (b.hasAttribute('data-gdel')) {
+        var st = await api('/api/admin/products/' + editingPid + '/photos/' + b.getAttribute('data-gdel'), { method: 'DELETE' });
+        syncPhotoState(st);
+        loadProducts();
+      } else if (b.hasAttribute('data-makecover')) {
+        var st2 = await api('/api/admin/products/' + editingPid + '/photos/' + b.getAttribute('data-makecover') + '/cover', { method: 'POST' });
+        syncPhotoState(st2);
+        loadProducts();
+      }
     } catch (err) { showNotice(err.message, true); }
+  });
+
+  document.getElementById('p-photos-add').addEventListener('click', function () {
+    document.getElementById('p-photos-file').click();
+  });
+
+  document.getElementById('p-photos-file').addEventListener('change', async function (e) {
+    var files = Array.prototype.slice.call(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    for (var i = 0; i < files.length; i++) {
+      var fd = new FormData();
+      fd.append('file', files[i]);
+      try {
+        var d = await api('/api/upload', { method: 'POST', body: fd });
+        if (editingPid === null) {
+          pendingUploads.push({ upload_id: d.upload_id, url: d.url });
+          renderPhotoGrid();
+        } else {
+          var st = await api('/api/admin/products/' + editingPid + '/photos', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ upload_id: d.upload_id })
+          });
+          syncPhotoState(st);
+        }
+      } catch (err) { showNotice(err.message, true); }
+    }
+    if (editingPid !== null) loadProducts();
+    showNotice('Foto(s) agregada(s) ✅');
   });
 
   document.getElementById('product-form').addEventListener('submit', async function (e) {
@@ -100,6 +184,7 @@
       photo: document.getElementById('p-photo').value,
       active: document.getElementById('p-active').checked
     };
+    if (!id) body.photo_upload_ids = pendingUploads.map(function (u) { return u.upload_id; });
     try {
       var saved;
       if (id) saved = await api('/api/admin/products/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
