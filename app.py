@@ -319,6 +319,10 @@ def init_db():
         )
     if "tracking_number" not in ocols:
         db.execute("ALTER TABLE orders ADD COLUMN tracking_number TEXT DEFAULT ''")
+    # Migración (2026-09-30): persona autorizada a recibir el pedido a
+    # domicilio (campo opcional que el cliente puede indicar en el checkout).
+    if "authorized_receiver" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN authorized_receiver TEXT DEFAULT ''")
     db.commit()
     try:
         if isinstance(db, _TursoConn):
@@ -1036,7 +1040,7 @@ def admin_list_orders():
                 "shipping_cents": r["shipping_cents"] if r["shipping_cents"] else 0,
                 "auto_paid": bool(r["auto_paid"]),
                 "customer_phone": _order_col(r, "customer_phone", ""),
-                "customer_id_number": _order_col(r, "customer_id_number", ""),
+                "authorized_receiver": _order_col(r, "authorized_receiver", ""),
                 "whatsapp_optin": bool(_order_col(r, "whatsapp_optin", 0)),
                 "fulfillment_status": _order_col(r, "fulfillment_status", "pending") or "pending",
                 "tracking_number": _order_col(r, "tracking_number", ""),
@@ -1234,11 +1238,6 @@ def valid_phone(raw):
     return len(norm_phone(raw)) == 8
 
 
-def valid_id_number(raw):
-    """Número de identidad hondureño: 13 dígitos (permite guiones)."""
-    return len("".join(c for c in str(raw or "") if c.isdigit())) == 13
-
-
 def _order_col(row, name, default=""):
     """Lee una columna de orders tolerando BDs viejas sin la columna."""
     try:
@@ -1330,7 +1329,8 @@ def api_checkout():
     delivery = (customer.get("delivery") or "").strip()
     payment = (customer.get("payment") or "").strip()
     phone = (customer.get("phone") or "").strip()
-    id_number = (customer.get("id_number") or "").strip()
+    # Persona autorizada a recibir el pedido (opcional, solo domicilio).
+    authorized_receiver = (customer.get("authorized_receiver") or "").strip()[:120]
     whatsapp_optin = 1 if customer.get("whatsapp_optin") else 0
     if not name or not address or not city or not department:
         return (
@@ -1360,22 +1360,6 @@ def api_checkout():
             ),
             400,
         )
-    # La identidad es obligatoria solo para envío a domicilio (la compañía de
-    # cargo la exige para entregar). Si viene informada, debe ser válida.
-    if delivery == "domicilio" and not valid_id_number(id_number):
-        return (
-            jsonify(
-                {"error": "Escribe tu número de identidad (13 dígitos)."}
-            ),
-            400,
-        )
-    if id_number and not valid_id_number(id_number):
-        return (
-            jsonify(
-                {"error": "El número de identidad debe tener 13 dígitos."}
-            ),
-            400,
-        )
     if payment not in ("efectivo", "deposito"):
         return (
             jsonify({"error": "Elige la forma de pago: efectivo o depósito."}),
@@ -1399,7 +1383,7 @@ def api_checkout():
     cur = db.execute(
         "INSERT INTO orders(items, total_cents, shipping_cents, status, created_at, "
         "customer_name, customer_address, customer_city, customer_department, "
-        "delivery_method, payment_method, customer_phone, customer_id_number, "
+        "delivery_method, payment_method, customer_phone, authorized_receiver, "
         "whatsapp_optin, fulfillment_status) "
         "VALUES(?,?,?, 'pending', ?,?,?,?,?,?,?,?,?,?,'pending')",
         (
@@ -1414,7 +1398,7 @@ def api_checkout():
             delivery,
             payment,
             norm_phone(phone),
-            "".join(c for c in id_number if c.isdigit()),
+            authorized_receiver,
             whatsapp_optin,
         ),
     )
@@ -1427,6 +1411,7 @@ def api_checkout():
             "shipping_cents": shipping,
             "delivery": delivery,
             "payment": payment,
+            "authorized_receiver": authorized_receiver,
         }
     )
 
