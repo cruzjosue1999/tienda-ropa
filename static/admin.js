@@ -35,6 +35,7 @@
       document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.add('hidden'); });
       document.getElementById('tab-' + t.dataset.tab).classList.remove('hidden');
       if (t.dataset.tab === 'pedidos') loadOrders();
+      if (t.dataset.tab === 'ganancias') loadProfit();
       if (t.dataset.tab === 'ajustes') loadSettings();
     });
   });
@@ -52,6 +53,7 @@
     document.getElementById('p-name').value = p ? p.name : '';
     document.getElementById('p-desc').value = p ? p.description : '';
     document.getElementById('p-price').value = p ? (p.price_cents / 100).toFixed(2) : '';
+    document.getElementById('p-cost').value = (p && p.cost_cents) ? (p.cost_cents / 100).toFixed(2) : '';
     document.getElementById('p-stock').value = p ? p.stock : 0;
     document.getElementById('p-sizes').value = p ? (p.sizes || []).join(', ') : '';
     document.getElementById('p-category').value = p ? (p.category || '') : '';
@@ -177,6 +179,7 @@
       name: document.getElementById('p-name').value,
       description: document.getElementById('p-desc').value,
       price: document.getElementById('p-price').value,
+      cost: document.getElementById('p-cost').value,
       stock: document.getElementById('p-stock').value,
       sizes: document.getElementById('p-sizes').value,
       category: document.getElementById('p-category').value,
@@ -203,12 +206,22 @@
       items.forEach(function (p) {
         var row = document.createElement('div');
         row.className = 'admin-row';
+        var costC = p.cost_cents || 0;
+        var profitLine;
+        if (costC > 0) {
+          var unit = p.price_cents - costC;
+          var pct = p.price_cents > 0 ? Math.round(unit / p.price_cents * 100) : 0;
+          profitLine = '<small>💰 Costo: ' + money(costC) + ' · Ganancia/u: ' + money(unit) + ' (' + pct + '%)</small>';
+        } else {
+          profitLine = '<small class="no-cost">💰 Sin costo registrado — tócalo ✏️ para agregarlo</small>';
+        }
         row.innerHTML =
           (p.photo ? '<img class="thumb" src="' + p.photo + '" alt="">' : '<img class="thumb" alt="">') +
           '<div class="info"><strong>' + escapeHtml(p.name) + '</strong>' +
           '<small>' + money(p.price_cents) + ' · Stock: ' + p.stock +
           (p.category ? ' · ' + escapeHtml(p.category) : '') +
-          ' <span class="badge ' + (p.active ? 'on' : 'off') + '">' + (p.active ? 'visible' : 'oculto') + '</span></small></div>' +
+          ' <span class="badge ' + (p.active ? 'on' : 'off') + '">' + (p.active ? 'visible' : 'oculto') + '</span></small>' +
+          profitLine + '</div>' +
           '<div class="actions"><button class="btn-small b-qr" title="Código QR para clientes">QR</button><button class="btn-small b-edit">✏️</button><button class="btn-small b-stock">📦</button><button class="btn-danger b-del">🗑️</button></div>';
         row.querySelector('.b-qr').addEventListener('click', function () { openQrModal(p); });
         row.querySelector('.b-edit').addEventListener('click', function () { openModal(p); });
@@ -276,6 +289,113 @@
       window.print();
       setTimeout(function () { document.body.classList.remove('qr-printing'); }, 800);
     });
+  }
+
+  /* Ganancias: tarjetas resumen + gráficas circulares (SVG puro, sin dependencias).
+     Los datos vienen de /api/admin/stats/profit y se recalculan con el
+     inventario real cada vez que se abre la pestaña. */
+  var PIE_COLORS = ['#0a2a5e', '#c1121f', '#f0b429', '#1e4fa3', '#e05252',
+                    '#f5c95c', '#06204a', '#8f0d16', '#b98a1f'];
+
+  function profitCard(ico, label, value) {
+    return '<div class="profit-card"><span class="pc-ico">' + ico + '</span>' +
+      '<span class="pc-label">' + label + '</span>' +
+      '<span class="pc-value">' + value + '</span></div>';
+  }
+
+  function legendHtml(rows) {
+    return rows.map(function (r) {
+      return '<div class="leg-row"><span class="sw" style="background:' + r.color + '"></span>' +
+        '<span class="leg-label">' + escapeHtml(r.label) + '</span>' +
+        '<span class="leg-val">' + r.amount +
+        (r.pct !== undefined ? ' <em>(' + r.pct + '%)</em>' : '') + '</span></div>';
+    }).join('');
+  }
+
+  function drawDonut(s) {
+    var box = document.getElementById('chart-donut');
+    var leg = document.getElementById('legend-donut');
+    var total = s.investment_cents + s.potential_profit_cents;
+    if (total <= 0) {
+      box.innerHTML = '<p class="hint">Aún no hay inventario con valor.</p>';
+      leg.innerHTML = '';
+      return;
+    }
+    var r = 62, circ = 2 * Math.PI * r;
+    var invLen = s.investment_cents / total * circ;
+    box.innerHTML =
+      '<svg viewBox="0 0 170 170" class="donut" role="img" aria-label="Inversión versus ganancia potencial">' +
+      '<circle cx="85" cy="85" r="' + r + '" fill="none" stroke="#e5e7eb" stroke-width="28"/>' +
+      '<circle cx="85" cy="85" r="' + r + '" fill="none" stroke="#0a2a5e" stroke-width="28"' +
+      ' stroke-dasharray="' + invLen.toFixed(2) + ' ' + circ.toFixed(2) + '" transform="rotate(-90 85 85)"/>' +
+      '<circle cx="85" cy="85" r="' + r + '" fill="none" stroke="#f0b429" stroke-width="28"' +
+      ' stroke-dasharray="' + (circ - invLen).toFixed(2) + ' ' + circ.toFixed(2) + '"' +
+      ' stroke-dashoffset="' + (-invLen).toFixed(2) + '" transform="rotate(-90 85 85)"/>' +
+      '<text x="85" y="82" text-anchor="middle" class="donut-num">' + money(total) + '</text>' +
+      '<text x="85" y="100" text-anchor="middle" class="donut-lbl">valor del inventario</text>' +
+      '</svg>';
+    leg.innerHTML = legendHtml([
+      { color: '#0a2a5e', label: 'Inversión (costo × stock)', amount: money(s.investment_cents), pct: Math.round(s.investment_cents / total * 100) },
+      { color: '#f0b429', label: 'Ganancia potencial', amount: money(s.potential_profit_cents), pct: Math.round(s.potential_profit_cents / total * 100) }
+    ]);
+  }
+
+  function piePath(cx, cy, r, a0, a1) {
+    var x0 = (cx + r * Math.cos(a0)).toFixed(2), y0 = (cy + r * Math.sin(a0)).toFixed(2);
+    var x1 = (cx + r * Math.cos(a1)).toFixed(2), y1 = (cy + r * Math.sin(a1)).toFixed(2);
+    var large = (a1 - a0) > Math.PI ? 1 : 0;
+    return 'M' + cx + ',' + cy + ' L' + x0 + ',' + y0 +
+      ' A' + r + ',' + r + ' 0 ' + large + ' 1 ' + x1 + ',' + y1 + ' Z';
+  }
+
+  function drawPie(s) {
+    var box = document.getElementById('chart-pie');
+    var leg = document.getElementById('legend-pie');
+    var items = (s.by_product || []).filter(function (p) { return p.total_profit_cents > 0; });
+    var total = items.reduce(function (a, p) { return a + p.total_profit_cents; }, 0);
+    if (!items.length || total <= 0) {
+      box.innerHTML = '<p class="hint">Registra el costo de tus productos para ver la ganancia por producto.</p>';
+      leg.innerHTML = '';
+      return;
+    }
+    var top = items.slice(0, 8);
+    var rest = items.slice(8).reduce(function (a, p) { return a + p.total_profit_cents; }, 0);
+    var slices = top.map(function (p) { return { label: p.name, value: p.total_profit_cents }; });
+    if (rest > 0) slices.push({ label: 'Otros', value: rest });
+    var a = -Math.PI / 2, cx = 85, cy = 85, r = 72;
+    var paths = slices.map(function (sl, i) {
+      var a1 = a + sl.value / total * 2 * Math.PI;
+      var d = piePath(cx, cy, r, a, a1);
+      a = a1;
+      return '<path d="' + d + '" fill="' + PIE_COLORS[i % PIE_COLORS.length] + '"/>';
+    }).join('');
+    box.innerHTML = '<svg viewBox="0 0 170 170" class="pie" role="img" aria-label="Ganancia potencial por producto">' + paths + '</svg>';
+    leg.innerHTML = legendHtml(slices.map(function (sl, i) {
+      return { color: PIE_COLORS[i % PIE_COLORS.length], label: sl.label, amount: money(sl.value), pct: Math.round(sl.value / total * 100) };
+    }));
+  }
+
+  async function loadProfit() {
+    var box = document.getElementById('profit-cards');
+    var warn = document.getElementById('profit-warn');
+    try {
+      var s = await api('/api/admin/stats/profit');
+      box.innerHTML =
+        profitCard('💰', 'Inversión en inventario', money(s.investment_cents)) +
+        profitCard('🏷️', 'Valor a precio de venta', money(s.sale_value_cents)) +
+        profitCard('📈', 'Ganancia potencial', money(s.potential_profit_cents)) +
+        profitCard('📊', 'Margen promedio', s.avg_margin_pct + '%');
+      if (s.products_without_cost > 0) {
+        warn.textContent = '⚠️ ' + s.products_without_cost +
+          ' producto(s) con stock aún no tienen costo registrado: la ganancia mostrada es parcial. ' +
+          'Tócalos ✏️ en la pestaña Productos para agregar el costo.';
+        warn.classList.remove('hidden');
+      } else {
+        warn.classList.add('hidden');
+      }
+      drawDonut(s);
+      drawPie(s);
+    } catch (err) { if (err.message !== 'auth') showNotice(err.message, true); }
   }
 
   /* Pedidos */

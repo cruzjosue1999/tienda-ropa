@@ -403,3 +403,32 @@ body.dark .fst-select, body.dark .track-input { background: #1f2937; border-colo
 .notice-box { background: #fff8e6; border: 1px solid #f0d48a; border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: .85rem; }
 .notice-box p { margin: 0 0 8px; line-height: 1.45; }
 .notice-box input { width: 100%; }
+
+/* Sección Ganancias del admin */
+.profit-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+.profit-card { background: var(--card); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 2px; border: 1px solid #e5e7eb; }
+body.dark .profit-card { background: #1e293b; border-color: #334155; }
+.profit-card .pc-ico { font-size: 1.3rem; }
+.profit-card .pc-label { font-size: .75rem; color: var(--muted); }
+.profit-card .pc-value { font-size: 1.15rem; font-weight: 800; color: #0a2a5e; }
+body.dark .profit-card .pc-value { color: #f0b429; }
+.profit-charts { display: grid; gap: 12px; }
+.chart-card h2 { font-size: 1rem; }
+.chart { text-align: center; }
+.donut, .pie { width: 100%; max-width: 230px; height: auto; }
+.donut-num { font-size: 17px; font-weight: 800; fill: #0a2a5e; }
+.donut-lbl { font-size: 10px; fill: #6b7280; }
+body.dark .donut-num { fill: #e5e7eb; }
+body.dark .donut-lbl { fill: #94a3b8; }
+.legend { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: .82rem; }
+.leg-row { display: flex; align-items: center; gap: 8px; }
+.leg-row .sw { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+.leg-row .leg-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leg-row .leg-val { font-weight: 700; }
+.leg-row .leg-val em { font-style: normal; font-weight: 400; color: var(--muted); }
+.no-cost { color: #b98a1f; }
+#profit-warn { margin-bottom: 12px; }
+@media (min-width: 700px) {
+  .profit-cards { grid-template-columns: repeat(4, 1fr); }
+  .profit-charts { grid-template-columns: 1fr 1fr; }
+}
