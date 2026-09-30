@@ -1,6 +1,6 @@
 /* Service Worker - tienda pública */
-var CACHE = 'tienda-v16';
-var ASSETS = ['/', '/static/style.css', '/static/store.js', '/static/product_filters.js', '/manifest.json'];
+var CACHE = 'tienda-v17';
+var ASSETS = ['/', '/static/style.css', '/static/store.js', '/static/product_filters.js', '/static/wa_button.js', '/manifest.json'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () { return self.skipWaiting(); }));

@@ -133,6 +133,18 @@
     if (infoData.info_envios) document.getElementById('foot-envios').textContent = infoData.info_envios;
   }
 
+  /* ---------- Botón flotante del canal de WhatsApp ---------- */
+  async function loadWaChannel() {
+    var btn = document.getElementById('wa-channel-btn');
+    if (!btn) return;
+    try {
+      var r = await fetch('/api/settings/public');
+      var d = await r.json();
+      var href = (window.WaButton && window.WaButton.href(d && d.whatsapp_channel_url)) || null;
+      if (href) { btn.href = href; btn.classList.remove('hidden'); }
+    } catch (e) { /* sin enlace: el botón queda oculto */ }
+  }
+
   document.querySelectorAll('.info-nav button').forEach(function (b) {
     b.addEventListener('click', function () {
       var key = b.getAttribute('data-info');
@@ -725,6 +737,7 @@
   });
 
   loadInfo();
+  loadWaChannel();
   loadProducts();
   prefillCustomer();
 })();

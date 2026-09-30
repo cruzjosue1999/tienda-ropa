@@ -559,6 +559,8 @@
       document.getElementById('set-contacto').value = s.info_contacto || '';
       document.getElementById('set-pagos').value = s.info_pagos || '';
       document.getElementById('set-envios').value = s.info_envios || '';
+      document.getElementById('set-wa-channel').value = s.whatsapp_channel_url || '';
+      setBadgeText('wa-status', s.whatsapp_channel_url);
       setBadge('sk-status', s.stripe_secret_key);
       setBadge('pk-status', s.stripe_publishable_key);
       setBadge('wh-status', s.stripe_webhook_secret);
@@ -568,6 +570,11 @@
     var el = document.getElementById(id);
     if (info && info.configured) { el.textContent = 'configurada ···' + info.last4; el.className = 'badge on'; }
     else { el.textContent = 'sin configurar'; el.className = 'badge off'; }
+  }
+  function setBadgeText(id, url) {
+    var el = document.getElementById(id);
+    if (url && url.trim()) { el.textContent = 'visible en la tienda'; el.className = 'badge on'; }
+    else { el.textContent = 'oculto (sin enlace)'; el.className = 'badge off'; }
   }
   document.getElementById('settings-form').addEventListener('submit', async function (e) {
     e.preventDefault();
@@ -579,7 +586,8 @@
       info_ubicacion: document.getElementById('set-ubicacion').value,
       info_contacto: document.getElementById('set-contacto').value,
       info_pagos: document.getElementById('set-pagos').value,
-      info_envios: document.getElementById('set-envios').value
+      info_envios: document.getElementById('set-envios').value,
+      whatsapp_channel_url: document.getElementById('set-wa-channel').value
     };
     ['stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret'].forEach(function (k, i) {
       var v = document.getElementById(['set-stripe-secret', 'set-stripe-pk', 'set-stripe-wh'][i]).value.trim();
