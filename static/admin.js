@@ -326,10 +326,12 @@
           var method = o.delivery_method === 'oficina' ? '🏢 Recoger en oficina cercana' : '🏠 Envío a domicilio';
           deliveryTxt = '<small>👤 ' + escapeHtml(o.customer_name) + (place ? ' · ' + escapeHtml(place) : '') + '</small>' +
             '<small>' + method + '</small>';
+          if (o.delivery_method === 'domicilio' && o.authorized_receiver) {
+            deliveryTxt += '<small>🙋 Persona autorizada a recibir: ' + escapeHtml(o.authorized_receiver) + '</small>';
+          }
         }
         var contactTxt = '';
         if (o.customer_phone) contactTxt += '<small>📱 ' + escapeHtml(o.customer_phone) + '</small>';
-        if (o.customer_id_number) contactTxt += '<small>🪪 ID: ' + escapeHtml(o.customer_id_number) + '</small>';
         if (o.whatsapp_optin) contactTxt += '<small>💬 Aceptó avisos por WhatsApp</small>';
         var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
           : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
