@@ -1263,6 +1263,13 @@ def api_info():
     return jsonify(out)
 
 
+@app.route("/api/settings/public")
+def api_settings_public():
+    """Ajustes públicos no sensibles: solo la URL del canal de WhatsApp
+    (vacía hasta que el dueño la configure en Ajustes)."""
+    return jsonify({"whatsapp_channel_url": get_setting("whatsapp_channel_url", "")})
+
+
 @app.route("/api/admin/settings", methods=["GET"])
 @login_required
 def admin_get_settings():
@@ -1270,6 +1277,7 @@ def admin_get_settings():
         "store_name": get_setting("store_name", "Tu Nuevo Estilo"),
         "currency": get_setting("currency", "hnl"),
         "tagline": get_setting("tagline", INFO_DEFAULTS["tagline"]),
+        "whatsapp_channel_url": get_setting("whatsapp_channel_url", ""),
         "info_horarios": get_setting("info_horarios", ""),
         "info_ubicacion": get_setting("info_ubicacion", ""),
         "info_contacto": get_setting("info_contacto", ""),
@@ -1295,6 +1303,13 @@ def admin_put_settings():
               "info_contacto", "info_pagos", "info_envios"]:
         if k in data:
             set_setting(k, (data[k] or "").strip())
+    if "whatsapp_channel_url" in data:
+        url = (data["whatsapp_channel_url"] or "").strip()
+        if len(url) > 500:
+            return jsonify({"error": "La URL es demasiado larga."}), 400
+        if url and not (url.startswith("http://") or url.startswith("https://")):
+            return jsonify({"error": "La URL del canal de WhatsApp debe empezar con http:// o https://"}), 400
+        set_setting("whatsapp_channel_url", url)
     for k in ["stripe_secret_key", "stripe_publishable_key", "stripe_webhook_secret"]:
         if k in data and data[k]:
             set_setting(k, data[k].strip())
