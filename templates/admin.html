@@ -78,6 +78,14 @@
         <input type="url" id="set-wa-channel" placeholder="https://whatsapp.com/channel/…" inputmode="url">
       </label>
       <p class="hint">Pega aquí el enlace de tu canal de WhatsApp Business cuando lo crees; el botón con el icono de WhatsApp aparecerá en la tienda. Mientras esté vacío, el botón queda oculto.</p>
+      <h3 class="sub-h">Notificaciones de nuevos pedidos</h3>
+      <p class="hint">Activa las notificaciones en este teléfono: cuando un cliente haga un pedido, te llegará un aviso como el de otras apps, aunque el admin esté cerrado.</p>
+      <p>
+        <button type="button" id="push-enable" class="btn-primary">🔔 Activar notificaciones</button>
+        <button type="button" id="push-disable" class="btn-ghost hidden">Desactivar</button>
+      </p>
+      <p class="hint" id="push-status">Estado: sin revisar.</p>
+      <p class="hint">En iPhone, el push requiere agregar el admin a la pantalla de inicio (Compartir → "Añadir a pantalla de inicio") y abrirlo desde ahí.</p>
       <label>Clave secreta de Stripe <span id="sk-status" class="badge"></span>
         <input type="password" id="set-stripe-secret" placeholder="sk_live_… o sk_test_…" autocomplete="off">
       </label>
