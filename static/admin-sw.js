@@ -1,6 +1,6 @@
 /* Service Worker - app de administración */
-var CACHE = 'tienda-admin-v14';
-var ASSETS = ['/admin', '/static/style.css', '/static/admin.js', '/admin/manifest.json'];
+var CACHE = 'tienda-admin-v16';
+var ASSETS = ['/admin', '/static/style.css', '/static/admin.js', '/static/pull_refresh.js', '/admin/manifest.json'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () { return self.skipWaiting(); }));

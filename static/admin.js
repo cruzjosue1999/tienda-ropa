@@ -21,7 +21,6 @@
   }
   async function api(path, opts) {
     var r = await fetch(path, opts);
-    if (r.status === 401) { window.location.href = '/admin/login'; throw new Error('auth'); }
     var d = await r.json().catch(function () { return {}; });
     if (!r.ok) throw new Error(d.error || 'Error en el servidor.');
     return d;
@@ -38,11 +37,6 @@
       if (t.dataset.tab === 'ganancias') loadProfit();
       if (t.dataset.tab === 'ajustes') { loadSettings(); refreshPushUI(); }
     });
-  });
-
-  document.getElementById('logout-btn').addEventListener('click', async function () {
-    await fetch('/api/logout', { method: 'POST' });
-    window.location.href = '/admin/login';
   });
 
   /* Productos */
@@ -445,55 +439,72 @@
             '<span class="order-item-price">' + money(it.price_cents || 0) + '</span></div>';
         }).join('');
         var row = document.createElement('div');
-        row.className = 'admin-row';
+        row.className = 'order-card';
         var d = new Date(o.created_at * 1000);
-        var deliveryTxt = '';
-        if (o.customer_name) {
-          var place = [o.customer_address, o.customer_city, o.customer_department].filter(function (x) { return x; }).join(', ');
-          var method = o.delivery_method === 'oficina' ? '🏢 Recoger en oficina cercana' : '🏠 Envío a domicilio';
-          deliveryTxt = '<small>👤 ' + escapeHtml(o.customer_name) + (place ? ' · ' + escapeHtml(place) : '') + '</small>' +
-            '<small>' + method + '</small>';
-          if (o.delivery_method === 'domicilio' && o.authorized_receiver) {
-            deliveryTxt += '<small>🙋 Persona autorizada a recibir: ' + escapeHtml(o.authorized_receiver) + '</small>';
-          }
-        }
-        var contactTxt = '';
-        if (o.customer_phone) contactTxt += '<small>📱 ' + escapeHtml(o.customer_phone) + '</small>';
-        if (o.whatsapp_optin) contactTxt += '<small>💬 Aceptó avisos por WhatsApp</small>';
-        var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
-          : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
         var fst = o.fulfillment_status || 'pending';
         var fstOpts = Object.keys(FST_TXT).map(function (k) {
           return '<option value="' + k + '"' + (k === fst ? ' selected' : '') + '>' + FST_TXT[k] + '</option>';
         }).join('');
-        var actions = '';
-        if (o.status === 'pending') {
-          actions = '<div class="actions"><button class="btn-small mark-paid">✅ Marcar pagado</button>' +
-            '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
-        } else if (o.status === 'paid' && !o.auto_paid) {
-          actions = '<div class="actions"><button class="btn-small mark-unpaid">↩️ No pagado</button>' +
-            '<button class="btn-small del-order">🗑️ Eliminar</button></div>';
-        } else if (o.status !== 'paid') {
-          actions = '<div class="actions"><button class="btn-small del-order">🗑️ Eliminar</button></div>';
-        }
-        // Si fue pago automático confirmado: sin botones, el pedido está protegido.
         var statusTxt = (o.status === 'paid' && o.auto_paid) ? '✅ pagado (automático)' : (STATUS_TXT[o.status] || o.status);
+        // Datos del cliente: una fila por dato, con etiqueta clara.
+        function odRow(label, val) {
+          return '<div class="od-row"><span class="od-label">' + label + '</span>' +
+            '<span class="od-val">' + val + '</span></div>';
+        }
+        var dataRows = '';
+        if (o.customer_name) {
+          dataRows += odRow('👤 Cliente:', escapeHtml(o.customer_name));
+          if (o.delivery_method === 'oficina') {
+            dataRows += odRow('📍 Entrega:', '🏢 Recoger en oficina cercana');
+          } else {
+            var place = [o.customer_address, o.customer_city, o.customer_department].filter(function (x) { return x; }).join(', ');
+            dataRows += odRow('📍 Dirección de envío:', escapeHtml(place) || '—');
+          }
+          if (o.customer_phone) dataRows += odRow('📱 Celular:', escapeHtml(o.customer_phone));
+          if (o.whatsapp_optin) dataRows += odRow('💬 WhatsApp:', 'Aceptó avisos por WhatsApp');
+          dataRows += odRow('🔢 N.º de pedido:', '#' + o.id);
+          if (o.tracking_number) dataRows += odRow('📦 Nº de guía:', escapeHtml(o.tracking_number));
+          var payTxt = o.payment_method === 'deposito' ? '🏦 Depósito B. Atlántida'
+            : o.payment_method === 'efectivo' ? '💵 Efectivo' : '';
+          if (payTxt) dataRows += odRow('💳 Pago:', payTxt + ' · ' + statusTxt);
+          if (o.delivery_method === 'domicilio' && o.authorized_receiver) {
+            dataRows += odRow('👥 Persona autorizada:', escapeHtml(o.authorized_receiver));
+          }
+          if (o.shipping_cents) dataRows += odRow('🚚 Envío:', money(o.shipping_cents));
+        }
+        // Botones de pago/eliminar según el estado del pedido.
+        var payBtns = '';
+        if (o.status === 'pending') {
+          payBtns = '<button class="btn-small mark-paid">✅ Marcar pagado</button>' +
+            '<button class="btn-small del-order">🗑️ Eliminar</button>';
+        } else if (o.status === 'paid' && !o.auto_paid) {
+          payBtns = '<button class="btn-small mark-unpaid">↩️ No pagado</button>' +
+            '<button class="btn-small del-order">🗑️ Eliminar</button>';
+        } else if (o.status !== 'paid') {
+          payBtns = '<button class="btn-small del-order">🗑️ Eliminar</button>';
+        }
+        // Si fue pago automático confirmado: sin botones de pago, el pedido está protegido.
         var waBtns = '';
         var waConf = waLink(o, 'confirmado'), waReady = waLink(o, 'listo');
         if (waConf) waBtns += '<button class="btn-small wa-conf" title="Abrir WhatsApp con el aviso de confirmación">💬 Avisar confirmación</button>';
         if (waReady) waBtns += '<button class="btn-small wa-ready" title="Abrir WhatsApp con el aviso de paquete listo">💬 Avisar listo</button>';
-        if (waBtns) waBtns = '<div class="actions">' + waBtns + '</div>';
-        row.innerHTML = '<div class="info"><strong>Pedido #' + o.id + ' · ' + money(o.total_cents) + '</strong>' +
-          '<div class="order-items">' + items + '</div>' + deliveryTxt + contactTxt +
-          (payTxt ? '<small>' + payTxt + '</small>' : '') +
-          (o.shipping_cents ? '<small>🚚 Envío: ' + money(o.shipping_cents) + '</small>' : '') +
-          '<small>' + d.toLocaleString('es-US') + ' · ' + statusTxt + '</small>' +
-          '<div class="fst-row"><span class="fst-badge">' + (FST_TXT[fst] || fst) + '</span>' +
+        var allBtns = waBtns + payBtns;
+        row.innerHTML = '<div class="order-head"><strong>🧾 Pedido #' + o.id + '</strong>' +
+          '<span class="order-date">' + d.toLocaleString('es-US') + '</span>' +
+          '<span class="badge ' + (o.status === 'paid' ? 'on' : 'off') + '">' + statusTxt + '</span>' +
+          '<span class="fst-badge">' + (FST_TXT[fst] || fst) + '</span></div>' +
+          (dataRows ? '<div class="order-data">' + dataRows + '</div>' : '') +
+          '<div class="order-items">' + items + '</div>' +
+          '<div class="order-total">Total: <strong>' + money(o.total_cents) + '</strong></div>' +
+          '<div class="order-actionsbar">' +
+          '<div class="oa-row"><span class="oa-label">Estado del envío:</span>' +
           '<select class="fst-select" aria-label="Cambiar estado del pedido">' + fstOpts + '</select></div>' +
-          '<div class="track-row"><input class="track-input" type="text" placeholder="N.º de guía" value="' +
+          '<div class="oa-row"><span class="oa-label">Nº de guía:</span>' +
+          '<input class="track-input" type="text" placeholder="N.º de guía" value="' +
           escapeHtml(o.tracking_number || '') + '">' +
-          '<button class="btn-small save-track">💾 Guardar guía</button></div></div>' +
-          actions + waBtns;
+          '<button class="btn-small save-track">💾 Guardar</button></div>' +
+          (allBtns ? '<div class="oa-btns">' + allBtns + '</div>' : '') +
+          '</div>';
         (function (id, rowEl, order) {
           var paidBtn = rowEl.querySelector('.mark-paid');
           if (paidBtn) paidBtn.addEventListener('click', async function () {
