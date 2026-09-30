@@ -26,6 +26,65 @@
   var infoData = {};
   var activeCat = '';
 
+  /* ---------- Búsqueda y filtros (lógica pura en product_filters.js) ---------- */
+  var searchInput = document.getElementById('search-input');
+  var searchClear = document.getElementById('search-clear');
+  var filterAvail = document.getElementById('filter-avail');
+  var filterPrice = document.getElementById('filter-price');
+  var filterSort = document.getElementById('filter-sort');
+  var resultCount = document.getElementById('result-count');
+  var clearFiltersBtn = document.getElementById('clear-filters');
+
+  function readFilters() {
+    return {
+      query: searchInput.value,
+      category: activeCat,
+      avail: filterAvail.value,
+      priceRange: filterPrice.value,
+      sort: filterSort.value
+    };
+  }
+
+  function filtersActive() {
+    return searchInput.value.trim() !== '' ||
+      activeCat !== '' ||
+      filterAvail.value !== 'all' ||
+      filterPrice.value !== 'all' ||
+      filterSort.value !== 'rel';
+  }
+
+  function clearFilters() {
+    searchInput.value = '';
+    setCategorySilent('');
+    filterAvail.value = 'all';
+    filterPrice.value = 'all';
+    filterSort.value = 'rel';
+    renderPills();
+    renderCatalog();
+    catalogTitle.textContent = 'Novedades';
+  }
+
+  function setCategorySilent(c) {
+    activeCat = c;
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      searchClear.classList.toggle('hidden', searchInput.value === '');
+      renderCatalog();
+    });
+    searchClear.addEventListener('click', function () {
+      searchInput.value = '';
+      searchClear.classList.add('hidden');
+      renderCatalog();
+      searchInput.focus();
+    });
+    [filterAvail, filterPrice, filterSort].forEach(function (sel) {
+      sel.addEventListener('change', renderCatalog);
+    });
+    clearFiltersBtn.addEventListener('click', clearFilters);
+  }
+
   var INFO_LABELS = {
     info_horarios: 'Horarios',
     info_ubicacion: 'Ubicación',
@@ -128,19 +187,38 @@
   }
 
   function renderCatalog() {
-    var list = activeCat
-      ? products.filter(function (p) { return (p.category || '').trim() === activeCat; })
-      : products;
+    var useFilters = !!(window.ProductFilters && searchInput);
+    var list = useFilters
+      ? window.ProductFilters.applyProductFilters(products, readFilters())
+      : (activeCat
+          ? products.filter(function (p) { return (p.category || '').trim() === activeCat; })
+          : products);
     catalog.innerHTML = '';
+    if (resultCount) {
+      if (!products.length) {
+        resultCount.textContent = '';
+      } else {
+        var n = list.length;
+        resultCount.textContent = n + (n === 1 ? ' artículo' : ' artículos');
+      }
+    }
+    if (clearFiltersBtn) clearFiltersBtn.classList.toggle('hidden', !filtersActive());
+    if (!products.length) {
+      catalog.innerHTML = '<p class="loading">Aún no hay productos en la tienda. Vuelve pronto. 🛍️</p>';
+      return;
+    }
     if (!list.length) {
-      catalog.innerHTML = '<p class="loading">' +
-        (products.length ? 'No hay productos en esta categoría.' : 'Aún no hay productos en la tienda. Vuelve pronto. 🛍️') +
-        '</p>';
+      catalog.innerHTML = '<div class="empty-results">' +
+        '<p>No encontramos productos con esos filtros 😕</p>' +
+        '<button class="btn-primary" id="empty-clear">Limpiar filtros</button>' +
+        '</div>';
+      var eb = document.getElementById('empty-clear');
+      if (eb) eb.addEventListener('click', clearFilters);
       return;
     }
     list.forEach(function (p) {
       var card = document.createElement('article');
-      card.className = 'card';
+      card.className = 'card' + (p.stock <= 0 ? ' out-of-stock' : '');
       var photo = p.photo
         ? '<img class="p-photo" src="' + p.photo + '" alt="' + escapeHtml(p.name) + '" loading="lazy">'
         : '<div class="no-photo">🛍️</div>';
