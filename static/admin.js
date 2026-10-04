@@ -455,7 +455,7 @@
         if (o.customer_name) {
           dataRows += odRow('👤 Cliente:', escapeHtml(o.customer_name));
           if (o.delivery_method === 'oficina') {
-            dataRows += odRow('📍 Entrega:', '🏢 Recoger en oficina cercana');
+            dataRows += odRow('📍 Entrega:', '📍 Recoger en persona (Puerto Castilla)');
           } else {
             var place = [o.customer_address, o.customer_city, o.customer_department].filter(function (x) { return x; }).join(', ');
             dataRows += odRow('📍 Dirección de envío:', escapeHtml(place) || '—');

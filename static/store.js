@@ -529,17 +529,13 @@
     cartCount.textContent = n;
   }
 
-  /* Envío: L150 hasta 5 artículos, L200 si son más; gratis al recoger en oficina */
-  function cartQty(cart) {
-    return cart.reduce(function (a, l) { return a + (l.qty || 0); }, 0);
-  }
   function deliveryMethod() {
     var r = document.querySelector('input[name="delivery"]:checked');
-    return r ? r.value : 'domicilio';
+    return r ? r.value : 'oficina';
   }
   function shippingCents(cart) {
-    if (deliveryMethod() === 'oficina') return 0;
-    return cartQty(cart) <= 5 ? 15000 : 20000;
+    // Solo recoger en persona (Puerto Castilla): sin costo de envío.
+    return 0;
   }
 
   function renderCart() {
@@ -633,7 +629,10 @@
       city: document.getElementById('cust-city').value.trim(),
       department: document.getElementById('cust-department').value,
       phone: document.getElementById('cust-phone').value.trim(),
-      authorized_receiver: document.getElementById('cust-authorized').value.trim(),
+      authorized_receiver: (function () {
+        var ah = document.getElementById('cust-authorized');
+        return ah ? ah.value.trim() : '';
+      })(),
       whatsapp_optin: document.getElementById('cust-wa-optin').checked,
       delivery: (document.querySelector('input[name="delivery"]:checked') || {}).value || '',
       payment: (document.querySelector('input[name="payment"]:checked') || {}).value || ''
@@ -653,7 +652,8 @@
       if (c.city) document.getElementById('cust-city').value = c.city;
       if (c.department) document.getElementById('cust-department').value = c.department;
       if (c.phone) document.getElementById('cust-phone').value = c.phone;
-      if (c.authorized_receiver) document.getElementById('cust-authorized').value = c.authorized_receiver;
+      var ah = document.getElementById('cust-authorized');
+      if (c.authorized_receiver && ah) ah.value = c.authorized_receiver;
       document.getElementById('cust-wa-optin').checked = !!c.whatsapp_optin;
       if (c.delivery) {
         var r = document.querySelector('input[name="delivery"][value="' + c.delivery + '"]');
@@ -679,18 +679,13 @@
     document.getElementById('order-success-num').textContent =
       'Tu número de pedido es #' + d.order_id + ' · Total: ' + money(d.total_cents) +
       (d.shipping_cents ? ' (incluye ' + money(d.shipping_cents) + ' de envío)' : ' (sin costo de envío)');
-    var detail = d.delivery === 'oficina'
-      ? 'Te avisaremos por WhatsApp cuando tu pedido esté listo para recoger en la oficina. 🏢'
-      : 'Haremos tu envío a domicilio en 2 a 4 días hábiles. 📦' +
-        ' 📋 Al momento de la entrega deberás mostrar tu identificación al repartidor' +
-        ' para confirmar que el pedido es tuyo.' +
-        (d.authorized_receiver ? ' Persona autorizada a recibir: ' + d.authorized_receiver + '.' : '');
+    var detail = 'Te avisaremos por WhatsApp cuando tu pedido esté listo para recoger en persona en Puerto Castilla. 📍';
     document.getElementById('order-success-detail').textContent = detail;
     var pay = d.payment === 'deposito'
-      ? '💳 Haz tu depósito o transferencia en Banco Atlántida por ' + money(d.total_cents) +
+      ? '🏦 Haz tu depósito o transferencia en Banco Atlántida por ' + money(d.total_cents) +
         ' y envíanos tu comprobante por WhatsApp al ' + WHATSAPP +
-        ' para procesar tu envío cuanto antes.'
-      : '💵 Pagarás ' + money(d.total_cents) + ' en efectivo al recibir tu pedido. ¡Gracias por tu compra! 🙌';
+        ' para procesar tu pedido cuanto antes.'
+      : '💵 Pagarás ' + money(d.total_cents) + ' en efectivo al recoger tu pedido en Puerto Castilla. ¡Gracias por tu compra! 🙌';
     document.getElementById('order-success-pay').textContent = pay;
     document.getElementById('order-success').classList.remove('hidden');
   }
