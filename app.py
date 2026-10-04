@@ -1292,7 +1292,7 @@ INFO_DEFAULTS = {
     "info_ubicacion": "Honduras. Hacemos envíos a todo el país.",
     "info_contacto": "Escríbenos para consultas y pedidos. Con gusto te atenderemos.",
     "info_pagos": "💵 Efectivo (pago contra entrega) y 🏦 depósito o transferencia en Banco Atlántida (depósito previo). Escríbenos por WhatsApp al +504 9527-3914 y te pasamos los datos de la cuenta.",
-    "info_envios": "🚚 Envío a domicilio a todo Honduras: L150 (hasta 5 artículos), L200 (6 o más). Recoger en oficina cercana: gratis. 📦 Entrega en 2 a 4 días hábiles.",
+    "info_envios": "📍 Recoger en persona en Puerto Castilla: gratis. Te avisamos por WhatsApp cuando tu pedido esté listo. 💳 Por el momento solo aceptamos depósito en Banco Atlántida.",
 }
 
 
@@ -1680,12 +1680,11 @@ def api_checkout():
             ),
             400,
         )
-    if delivery not in ("domicilio", "oficina"):
+    if delivery != "oficina":
         return (
             jsonify(
                 {
-                    "error": "Elige el método de entrega: envío a domicilio "
-                    "o recoger en oficina cercana."
+                    "error": "Por el momento solo ofrecemos recoger en persona en Puerto Castilla."
                 }
             ),
             400,
@@ -1700,13 +1699,9 @@ def api_checkout():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    # Costo de envío: L150 hasta 5 artículos, L200 si son más.
-    # Recoger en oficina cercana no tiene costo.
+    # Solo recoger en persona (Puerto Castilla): sin costo de envío.
     total_qty = sum(s["qty"] for s in snapshot)
-    if delivery == "oficina":
-        shipping = 0
-    else:
-        shipping = 15000 if total_qty <= 5 else 20000
+    shipping = 0
     total += shipping
 
     db = get_db()
